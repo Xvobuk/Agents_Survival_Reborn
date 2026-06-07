@@ -153,6 +153,8 @@ FEATURES: dict[str, FeatureDef] = {
     "tent": FeatureDef("tent", "Tent", (92, 128, 96), ("shelter", "rest"), True, 999, None, 1, (), "feature_tent", False),
     "wooden_crate": FeatureDef("wooden_crate", "Wooden crate", (121, 82, 45), ("storage", "wood"), True, 999, None, 1, (), "feature_wooden_crate", False),
     "wooden_door": FeatureDef("wooden_door", "Wooden door", (116, 74, 42), ("building", "wood"), True, 999, None, 1, (), "feature_wooden_door", False),
+    "wooden_wall": FeatureDef("wooden_wall", "Wooden wall", (116, 83, 52), ("wall", "building", "wood"), False, 999, None, 1, (), "feature_wooden_wall", False),
+    "stone_wall": FeatureDef("stone_wall", "Stone wall", (112, 116, 118), ("wall", "building", "stone"), False, 999, None, 1, (), "feature_stone_wall", False),
     "bedroll": FeatureDef("bedroll", "Bedroll", (82, 122, 66), ("rest", "camp"), True, 999, None, 1, (), "feature_bedroll", False),
 }
 
@@ -211,6 +213,10 @@ ITEMS: dict[str, ItemDef] = {
     "kiln": ItemDef("kiln", "Kiln", ("station", "crafted"), 1, sprite="item_kiln"),
     "torch": ItemDef("torch", "Torch", ("tool", "light", "crafted"), max_stack=8, durability=80, tool_tags=("light",), tool_power=1, sprite="item_torch"),
     "wooden_shield": ItemDef("wooden_shield", "Wooden shield", ("tool", "defense", "crafted"), max_stack=1, durability=120, tool_tags=("shield",), tool_power=1, sprite="item_wooden_shield"),
+    "wooden_floor": ItemDef("wooden_floor", "Wooden floor", ("building", "floor", "wood", "crafted"), max_stack=32, sprite="item_wooden_floor"),
+    "stone_floor": ItemDef("stone_floor", "Stone floor", ("building", "floor", "stone", "crafted"), max_stack=32, sprite="item_stone_floor"),
+    "wooden_wall": ItemDef("wooden_wall", "Wooden wall", ("building", "wall", "wood", "crafted"), max_stack=32, sprite="item_wooden_wall"),
+    "stone_wall": ItemDef("stone_wall", "Stone wall", ("building", "wall", "stone", "crafted"), max_stack=32, sprite="item_stone_wall"),
     "wooden_crate": ItemDef("wooden_crate", "Wooden crate", ("container", "crafted", "wood"), max_stack=16, sprite="item_wooden_crate"),
     "wooden_door": ItemDef("wooden_door", "Wooden door", ("building", "crafted", "wood"), max_stack=16, sprite="item_wooden_door"),
     "bedroll": ItemDef("bedroll", "Bedroll", ("crafted", "rest"), max_stack=1, sprite="item_bedroll"),
@@ -260,6 +266,10 @@ RECIPES: tuple[RecipeDef, ...] = (
     RecipeDef("copper_ingot", "Copper ingot", (ing("copper_ore", 2), ing("coal")), (("copper_ingot", 1),), "kiln", "smelt ore"),
     RecipeDef("iron_ingot", "Iron ingot", (ing("iron_ore", 2), ing("coal")), (("iron_ingot", 1),), "kiln", "stronger metal"),
     RecipeDef("wooden_shield", "Wooden shield", (ing("plank", 3), ing("cordage", 2)), (("wooden_shield", 1),), "workbench", "defense from rough planks"),
+    RecipeDef("wooden_floor", "Wooden floor", (ing("plank", 1),), (("wooden_floor", 2),), "workbench", "floor pieces for a house"),
+    RecipeDef("stone_floor", "Stone floor", (ing("stone", 2),), (("stone_floor", 2),), "workbench", "cool durable floor pieces"),
+    RecipeDef("wooden_wall", "Wooden wall", (ing("plank", 2), ing("stick", 1)), (("wooden_wall", 2),), "workbench", "wooden house walls"),
+    RecipeDef("stone_wall", "Stone wall", (ing("stone", 3), ing("clay_lump", 1)), (("stone_wall", 2),), "workbench", "sturdy stone walls"),
     RecipeDef("wooden_crate", "Wooden crate", (ing("plank", 4), ing("stick", 2)), (("wooden_crate", 1),), "workbench", "wooden storage"),
     RecipeDef("wooden_door", "Wooden door", (ing("plank", 3), ing("stick"), ing("cordage")), (("wooden_door", 1),), "workbench", "base building piece"),
     RecipeDef("bedroll", "Bedroll", (ing("grass_fiber", 4), ing("reeds", 2), ing("cordage", 2)), (("bedroll", 1),), "workbench", "portable rest kit"),
@@ -282,6 +292,10 @@ PLACEABLE_ITEMS = frozenset(
         "tent",
         "wooden_crate",
         "wooden_door",
+        "wooden_floor",
+        "stone_floor",
+        "wooden_wall",
+        "stone_wall",
         "bedroll",
     }
 )

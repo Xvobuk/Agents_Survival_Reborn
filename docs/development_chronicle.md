@@ -1512,3 +1512,80 @@ Validation:
 Current read:
 
 This is the first small step toward actual settlement behavior: placed stations now act as anchors that agents can return to when their inventory makes station recipes possible. The next Qwen pass should verify whether that finally produces a placed `Wooden crate`, and whether the chat volume remains low-but-human rather than silent.
+
+## 2026-06-07 14:58 +03: Floors, Walls, Houses, And Rest Bonus
+
+Reason:
+
+The user asked for real building mechanics beyond tents:
+
+- placeable floors made from planks or stone;
+- placeable walls;
+- homes formed by floor spaces enclosed by walls and a door;
+- bedroll/rest bonuses when the bed is inside a valid house;
+- a new ChatGPT atlas prompt for missing building sprites.
+
+Implementation:
+
+- Added new items:
+  - `Wooden floor`;
+  - `Stone floor`;
+  - `Wooden wall`;
+  - `Stone wall`.
+- Added new wall features:
+  - `wooden_wall`;
+  - `stone_wall`.
+- Added new recipes:
+  - `wooden_floor`: `1 Plank -> 2 Wooden floor`;
+  - `stone_floor`: `2 Stone -> 2 Stone floor`;
+  - `wooden_wall`: `2 Plank + 1 Stick -> 2 Wooden wall`;
+  - `stone_wall`: `3 Stone + 1 Clay lump -> 2 Stone wall`.
+- Added all new building pieces to `PLACEABLE_ITEMS`.
+- Added a separate `floor` layer to `Tile` so floors can exist underneath features like `Bedroll`, `Workbench`, `Crate`, or `Door`.
+- Updated placement:
+  - floor items place into `tile.floor`;
+  - wall items place as blocking features;
+  - doors remain passable features.
+- Added house detection:
+  - a house is a contiguous floor region;
+  - every 4-direction boundary must be closed by `Wooden wall`, `Stone wall`, or `Wooden door`;
+  - open edges break the house.
+- Added house rest bonus:
+  - `Bedroll` inside an enclosed house gives extra energy;
+  - larger enclosed floor area gives a higher bonus, capped at 24 bonus energy.
+- Updated renderer:
+  - floor sprites draw after terrain and before features.
+- Updated replay payload:
+  - frames now include a `floors` list.
+- Updated replay viewer:
+  - `tools/play_replay.py` reconstructs the new floor layer correctly.
+- Added building sprite prompt:
+  - `docs/building_sprite_atlas_prompt.md`.
+- Generated placeholders for the six new sprites:
+  - `feature_wooden_wall`;
+  - `feature_stone_wall`;
+  - `item_wooden_floor`;
+  - `item_stone_floor`;
+  - `item_wooden_wall`;
+  - `item_stone_wall`.
+
+Validation:
+
+- Targeted house test:
+  - built a 3x3 wooden-floor interior;
+  - surrounded it with walls;
+  - placed a door on the boundary;
+  - placed a `Bedroll` inside;
+  - `house_rest_bonus` detected a 9-tile house and returned bonus energy;
+  - `Bedroll` interaction produced `rested on bedroll inside a 9-tile house`;
+  - wall cells blocked movement;
+  - door cell remained passable.
+- Targeted replay test:
+  - placing `Wooden floor` through `Simulation.apply_round_decisions` produced `placed Wooden floor`;
+  - `_replay_payload` included the floor in `floors`.
+- `compileall` passed.
+- `tools/generate_missing_sprites.py` wrote 6 new placeholders and skipped 143 existing sprites.
+
+Current read:
+
+The mechanical basis for houses now exists. Agents can learn/craft/place floor and wall pieces, and a properly enclosed floor area with a door now matters mechanically. The next AI-behavior challenge is social: agents may still build separate fragments unless we add shared building projects, reserved build sites, and resource contribution memory.

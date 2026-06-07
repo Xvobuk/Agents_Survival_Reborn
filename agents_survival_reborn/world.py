@@ -12,6 +12,7 @@ from .data import FEATURES, ITEMS, PLACEABLE_ITEMS, TERRAINS, FeatureDef, Loot
 class Tile:
     terrain: str
     feature: str | None = None
+    floor: str | None = None
     hp: int = 0
     shade: int = 0
 
@@ -64,14 +65,22 @@ class World:
     def has_station_near(self, x: int, y: int, station: str) -> bool:
         return any(self.tile(nx, ny).feature == station for nx, ny in self.neighbors(x, y, include_center=True))
 
-    def place_station(self, x: int, y: int, station: str) -> bool:
-        if station not in PLACEABLE_ITEMS:
+    def place_station(self, x: int, y: int, item_id: str) -> bool:
+        if item_id not in PLACEABLE_ITEMS:
             return False
         tile = self.tile(x, y)
-        if tile.feature or "water" in TERRAINS[tile.terrain].tags:
+        item = ITEMS[item_id]
+        if "water" in TERRAINS[tile.terrain].tags:
             return False
-        tile.feature = station
-        tile.hp = FEATURES[station].max_hp
+        if "floor" in item.tags:
+            if tile.floor:
+                return False
+            tile.floor = item_id
+            return True
+        if tile.feature:
+            return False
+        tile.feature = item_id
+        tile.hp = FEATURES[item_id].max_hp
         return True
 
     def advance_wildlife(self, occupied: set[tuple[int, int]] | None = None) -> None:
@@ -119,10 +128,10 @@ class World:
             return Interaction(False, "nothing is reachable there", Counter())
         tile = self.tile(x, y)
         if tile.feature:
-            return self._interact_feature(agent, tile)
+            return self._interact_feature(agent, tile, x, y)
         return self._interact_terrain(agent, tile)
 
-    def _interact_feature(self, agent: object, tile: Tile) -> Interaction:
+    def _interact_feature(self, agent: object, tile: Tile, x: int, y: int) -> Interaction:
         feature = FEATURES[tile.feature or ""]
         if feature.feature_id in {"workbench", "campfire", "kiln"}:
             return Interaction(True, f"checked {feature.name.lower()}", Counter(), "station")
@@ -131,10 +140,13 @@ class World:
             agent.hunger = max(0.0, agent.hunger - 1.5)
             return Interaction(True, "rested in tent", Counter(), "rest")
         if feature.feature_id == "bedroll":
-            agent.energy = min(100.0, agent.energy + 10.0)
-            agent.hunger = max(0.0, agent.hunger - 1.0)
+            bonus, size = self.house_rest_bonus(x, y)
+            agent.energy = min(100.0, agent.energy + 10.0 + bonus)
+            agent.hunger = max(0.0, agent.hunger - max(0.35, 1.0 - bonus * 0.03))
+            if bonus:
+                return Interaction(True, f"rested on bedroll inside a {size}-tile house", Counter(), "rest")
             return Interaction(True, "rested on bedroll", Counter(), "rest")
-        if feature.feature_id in {"wooden_crate", "wooden_door"}:
+        if feature.feature_id in {"wooden_crate", "wooden_door", "wooden_wall", "stone_wall"}:
             return Interaction(True, f"checked {feature.name.lower()}", Counter(), "building")
         if feature.feature_id == "cave":
             tool = self._tool(agent, "pickaxe", feature.min_power)
@@ -256,6 +268,41 @@ class World:
         loot["soil"] += 1
         loot = self._give(agent, loot)
         return Interaction(True, "gathered soil", loot, "earth")
+
+    def house_rest_bonus(self, x: int, y: int) -> tuple[float, int]:
+        tile = self.tile(x, y)
+        if not tile.floor:
+            return 0.0, 0
+        enclosed, size = self._enclosed_floor_region(x, y)
+        if not enclosed:
+            return 0.0, size
+        return min(24.0, 4.0 + size * 1.25), size
+
+    def _enclosed_floor_region(self, x: int, y: int) -> tuple[bool, int]:
+        stack = [(x, y)]
+        seen: set[tuple[int, int]] = set()
+        enclosed = True
+        while stack and len(seen) <= 256:
+            cx, cy = stack.pop()
+            if (cx, cy) in seen or not self.in_bounds(cx, cy):
+                continue
+            current = self.tile(cx, cy)
+            if not current.floor:
+                continue
+            seen.add((cx, cy))
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = cx + dx, cy + dy
+                if not self.in_bounds(nx, ny):
+                    enclosed = False
+                    continue
+                neighbor = self.tile(nx, ny)
+                if neighbor.floor:
+                    if (nx, ny) not in seen:
+                        stack.append((nx, ny))
+                    continue
+                if neighbor.feature not in {"wooden_wall", "stone_wall", "wooden_door"}:
+                    enclosed = False
+        return enclosed and bool(seen), len(seen)
 
     @staticmethod
     def _give(agent: object, loot: Counter[str]) -> Counter[str]:

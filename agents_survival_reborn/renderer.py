@@ -47,6 +47,9 @@ class Renderer:
                 sprite = self.assets.get(terrain.sprite)
                 dest = pygame.Rect(int(x * TILE_SIZE - camera.x), int(y * TILE_SIZE - camera.y), TILE_SIZE, TILE_SIZE)
                 screen.blit(sprite, dest)
+                if tile.floor:
+                    floor_sprite = self.assets.get(ITEMS[tile.floor].sprite)
+                    screen.blit(floor_sprite, dest)
                 if tile.shade:
                     shade = max(0, min(255, 128 + tile.shade * 3))
                     overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)

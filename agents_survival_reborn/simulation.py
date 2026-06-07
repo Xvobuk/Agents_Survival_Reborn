@@ -587,9 +587,10 @@ class Simulation:
         if current_tile.feature or "water" in TERRAINS[current_tile.terrain].tags:
             return ""
         ranked: list[tuple[int, str]] = []
-        priorities = {"campfire": 1, "workbench": 2, "kiln": 3, "tent": 4, "bedroll": 5, "wooden_crate": 6}
+        priorities = {"campfire": 1, "workbench": 2, "kiln": 3, "tent": 4, "bedroll": 5, "wooden_crate": 6, "wooden_floor": 7, "stone_floor": 7, "wooden_wall": 8, "stone_wall": 8}
+        unique_placeables = {"campfire", "workbench", "kiln", "tent", "bedroll", "wooden_crate"}
         for item_id in self._placeable_inventory(agent):
-            if self._world_has_feature(item_id):
+            if item_id in unique_placeables and self._world_has_feature(item_id):
                 continue
             ranked.append((priorities.get(item_id, 9), item_id))
         return sorted(ranked)[0][1] if ranked else ""
@@ -621,6 +622,15 @@ class Simulation:
             return 3 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
         if {"tent", "bedroll"} & output_ids and any(not self._has_item_or_world_station(agent, item_id) for item_id in output_ids if item_id in {"tent", "bedroll"}):
             return 4 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
+        building_pieces = {"wooden_floor", "stone_floor", "wooden_wall", "stone_wall"}
+        if output_ids & building_pieces:
+            stock = sum(agent.inventory.get(item_id, 0) for item_id in building_pieces)
+            placed = self._placed_building_piece_count()
+            if stock + placed < 16:
+                return 4 if self.world.has_station_near(agent.x, agent.y, "workbench") else 6
+            if stock + placed < 40:
+                return 8
+            return 999
         if any(item_id in PLACEABLE_ITEMS and not self._has_item_or_world_station(agent, item_id) for item_id in output_ids):
             return 5
         if output_ids and all(item_id in PLACEABLE_ITEMS and self._has_item_or_world_station(agent, item_id) for item_id in output_ids):
@@ -659,6 +669,16 @@ class Simulation:
 
     def _world_has_feature(self, feature_id: str) -> bool:
         return any(tile.feature == feature_id for row in self.world.tiles for tile in row)
+
+    def _placed_building_piece_count(self) -> int:
+        count = 0
+        for row in self.world.tiles:
+            for tile in row:
+                if tile.floor:
+                    count += 1
+                if tile.feature in {"wooden_wall", "stone_wall"}:
+                    count += 1
+        return count
 
     @staticmethod
     def _is_needed_tool(agent: Agent, item_id: str) -> bool:
@@ -1417,6 +1437,8 @@ class Simulation:
                     "ground_tags": list(terrain.tags),
                     "passable": self.world.can_enter(agent, x, y),
                 }
+                if tile.floor:
+                    entry["floor"] = item_name(tile.floor)
                 if tile.feature:
                     feature = FEATURES[tile.feature]
                     entry.update(
@@ -1627,13 +1649,17 @@ class Simulation:
 
     def _replay_payload(self) -> dict[str, Any]:
         features: list[dict[str, Any]] = []
+        floors: list[dict[str, Any]] = []
         for y in range(self.world.height):
             for x in range(self.world.width):
                 tile = self.world.tile(x, y)
+                if tile.floor:
+                    floors.append({"x": x, "y": y, "floor": tile.floor})
                 if tile.feature:
                     features.append({"x": x, "y": y, "feature": tile.feature, "hp": tile.hp})
         return {
             "round": self.round_index,
+            "floors": floors,
             "features": features,
             "agents": [
                 {

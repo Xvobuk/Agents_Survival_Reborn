@@ -109,12 +109,13 @@ def make_replay_sim(world_data: dict[str, Any], frame: dict[str, Any], session: 
     terrain_rows = [row.split(",") for row in world_data["terrain_rows"]]
     shade_rows = world_data.get("shade_rows") or [[0 for _ in range(world.width)] for _ in range(world.height)]
     feature_map = {(entry["x"], entry["y"]): entry for entry in frame.get("features", [])}
+    floor_map = {(entry["x"], entry["y"]): entry["floor"] for entry in frame.get("floors", [])}
 
     def tile(x: int, y: int) -> Tile:
         feature_entry = feature_map.get((x, y))
         feature_id = feature_entry["feature"] if feature_entry else None
         hp = int(feature_entry.get("hp", FEATURES[feature_id].max_hp)) if feature_entry else 0
-        return Tile(terrain_rows[y][x], feature_id, hp, shade_rows[y][x])
+        return Tile(terrain_rows[y][x], feature_id, floor_map.get((x, y)), hp, shade_rows[y][x])
 
     world.tile = tile
     world.can_enter = lambda agent, x, y: 0 <= x < world.width and 0 <= y < world.height and TERRAINS[tile(x, y).terrain].passable
