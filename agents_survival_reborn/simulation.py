@@ -47,6 +47,10 @@ STATUS_UPDATE_PATTERNS = (
     r"\bcenter of the map\b",
     r"\bcenter of (this|the) area\b",
     r"\bi'?m currently at\b.*\bcenter\b",
+    r"\bi'?m standing in the middle\b",
+    r"\bthe air is fresh\b",
+    r"\bsun shines\b",
+    r"\bvast grassland\b",
 )
 
 DIALOGUE_MARKERS = {
@@ -437,7 +441,13 @@ class Simulation:
     def _productive_replacement(self, agent: Agent, decision: Decision, reason: str) -> tuple[Decision, str]:
         recipe = self._best_known_craft(agent)
         discoverable_recipe = self._best_discoverable(agent)
+        recipe_priority = self._craft_priority(agent, recipe) if recipe else 999
         if recipe and (not discoverable_recipe or self._craft_priority(agent, recipe) <= self._craft_priority(agent, discoverable_recipe)):
+            if recipe_priority > 5:
+                progress_move = self._progress_exploration_move(agent, decision)
+                if progress_move:
+                    agent.last_intent = progress_move.intent
+                    return progress_move, reason
             adjusted = Decision(
                 action="craft",
                 recipe_id=recipe.recipe_id,

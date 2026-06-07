@@ -1234,3 +1234,54 @@ Validation:
 Current read:
 
 The axe milestone now has a stronger mechanical pull toward logs. The next long QA pass should check whether this reliably produces `Birch log`/`Oak log`, then `Rough planks`, then `Workbench` placement.
+
+## 2026-06-07 13:06 +03: Plank Threshold And Scenery Chat Filter
+
+Reason:
+
+A 24-round Qwen run tested the post-axe tree targeting fix and whether agents could advance from logs into planks.
+
+Observed QA session:
+
+```text
+logs/session_20260607_125710
+```
+
+Good signs:
+
+- 24 Qwen rounds completed with 0 LLM fallbacks.
+- Mira crafted `Stone axe`, harvested `Birch log`, discovered `Rough planks`, and made `3 Plank`.
+- Noah also reached `Stone axe`, `Knapped stone`, and `Stone shovel`.
+- Replay inventory frames had no slot-limit violations.
+
+Problems:
+
+- One accepted chat line was a scenery monologue rather than player dialogue:
+  - `I'm standing in the middle of a vast grassland. The air is fresh and the sun shines brightly...`
+- Mira reached `3 Plank`, but instead of pushing for one more log/plank toward `Workbench`, replacement logic allowed another low-priority `Cordage` craft.
+
+Implementation:
+
+- Expanded status speech filters for scenery monologues:
+  - `I'm standing in the middle`;
+  - `vast grassland`;
+  - `the air is fresh`;
+  - `sun shines`.
+- Updated `_productive_replacement`:
+  - Known crafts with priority above station/placeable/tool thresholds no longer automatically win.
+  - If only a low-priority known craft such as extra `Cordage` is available, progress exploration gets a chance first.
+  - This lets agents with `Stone axe`, no logs, and fewer than 4 planks keep targeting trees instead of filling time with spare cordage.
+
+Validation:
+
+- Targeted status check confirmed the scenery line is now blocked.
+- Targeted progression snapshot confirmed:
+  - with `Stone axe + 3 Plank + Stick + Cordage + Grass fiber`, `Cordage` is known and craftable but priority 6;
+  - progress target selects nearby `Birch tree`;
+  - productive replacement returns an `interact` with the nearby `Birch tree`, not a `Cordage` craft.
+- `compileall` passed.
+- Targeted `py_compile` passed for `simulation.py`.
+
+Current read:
+
+The chain now reaches `Rough planks`; the next target is getting agents from `3 Plank` to the fourth plank and then discovering/crafting/placing `Workbench`.
