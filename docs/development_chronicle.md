@@ -2005,3 +2005,55 @@ Validation:
 Current read:
 
 The viewer experience is now much more inspectable. The next UI improvement would be a click-to-pin inspection panel, but hover tooltips already cover quick reading during live gameplay and replay review.
+
+## 2026-06-08 00:35 +03: Cleaner Human Chat And Safer Building Tiles
+
+Reason:
+
+The user ran 8 agents for roughly 200 turns and reported three visible problems:
+
+- a pine tree appeared through placed floor tiles;
+- a bear killed Leo too abruptly;
+- chat still felt unlike real players, with agents saying action narration, assistant-style prompts, and scenic map descriptions.
+
+Implementation:
+
+- Added `World.can_place_station()` and made placement use it consistently.
+- Changed floor placement so floors no longer go under natural features such as trees, plants, animals, rocks, and ore.
+- Kept floors compatible with already placed human-made camp objects such as workbenches, campfires, crates, tents, bedrolls, and other stations.
+- Prevented moving wildlife from stepping onto floor tiles, so animals should not casually wander into player-built interiors.
+- Tuned hostile encounter pressure:
+  - reduced wolf, bear, snake, and boar damage;
+  - reduced base hostile attack chance;
+  - lowered attack chance further when the agent has a weapon or armor.
+- Expanded chat filtering for unnatural lines:
+  - blocked assistant/operator prompts such as "where would you like me to go";
+  - blocked narrator/map-guide lines such as "you are currently in a vast landscape";
+  - blocked action-status lines such as "I think I can get wood from that nearby tree";
+  - blocked self-preservation announcements such as "I need to be more careful" while still allowing direct warnings.
+- Added predator words to direct social markers so useful warnings like "wolf by the workbench, back up" can pass.
+- Strengthened local-model prompts:
+  - speech must be a real line to another nearby player;
+  - self-talk, action narration, scenic descriptions, and operator-facing assistant lines must stay out of chat;
+  - added examples of good short warnings, recipe questions, trades, and cooperation lines.
+
+Validation:
+
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- Targeted placement test passed:
+  - floor cannot be placed under a pine tree;
+  - floor can be placed under an existing workbench;
+  - moving wildlife avoids floor tiles.
+- Targeted chat filter test passed:
+  - all bad screenshot-style lines were blocked;
+  - direct danger warning and recipe question were allowed.
+- Offline social QA passed for 12 rounds / 4 agents:
+  - no crashes;
+  - crafting, experiments, interactions, movement, logs, and replay output continued working.
+- Local Ollama QA passed for 3 rounds / 4 agents:
+  - all requests succeeded through `qwen2.5:7b`;
+  - Qwen still attempted several status-update lines, but the new filters blocked them from visible chat.
+
+Current read:
+
+The visible chat should now be quieter but less fake. The next useful step is not just more filtering, but stronger positive social scaffolding: agents need concrete shared projects and remembered obligations so they have something human to talk about besides immediate survival chores.

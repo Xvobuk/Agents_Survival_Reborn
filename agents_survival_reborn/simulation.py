@@ -47,6 +47,17 @@ STATUS_UPDATE_PATTERNS = (
     r"\bbefore i can\s+place\b",
     r"\bset up my\s+(campfire|workbench|kiln|base)\b",
     r"\bwhat would you like to do\b",
+    r"\bwhere would you like me to go\b",
+    r"\bwhat would you like me to do\b",
+    r"\byou are currently\b",
+    r"\bi'?m currently stationary\b",
+    r"\bi think (i can|there'?s|i'?ll|i should)\b.*\b(get|place|craft|make|gather|move|build|set up|find)\b",
+    r"\blet'?s see if i can\b",
+    r"\bgood spot here for\b",
+    r"\bnearby tree\b",
+    r"\b(i need|i have) to be more careful\b",
+    r"\bto the (north|south|east|west)\s+(lies|stretches|there is)\b",
+    r"\b(vast landscape|diverse terrains|teeming with life|filled with diverse)\b",
     r"\bcenter of the map\b",
     r"\bcenter of (this|the) area\b",
     r"\bi'?m currently at\b.*\bcenter\b",
@@ -693,19 +704,12 @@ class Simulation:
     def _has_nearby_place_spot(self, agent: Agent, item_id: str) -> bool:
         if item_id not in PLACEABLE_ITEMS:
             return False
-        item = ITEMS[item_id]
         occupied = {(other.x, other.y) for other in self.agents if other.health > 0 and other.agent_id != agent.agent_id}
         for dx, dy in CENTER_AND_NEIGHBORS:
             x, y = agent.x + dx, agent.y + dy
             if not self.world.in_bounds(x, y) or (x, y) in occupied:
                 continue
-            tile = self.world.tile(x, y)
-            if "water" in TERRAINS[tile.terrain].tags:
-                continue
-            if "floor" in item.tags:
-                if not tile.floor:
-                    return True
-            elif not tile.feature:
+            if self.world.can_place_station(x, y, item_id):
                 return True
         return False
 
@@ -1001,7 +1005,7 @@ class Simulation:
         return best
 
     def _resolve_hostile_encounters(self) -> None:
-        damage_by_feature = {"wolf": 5.0, "bear": 9.0, "snake": 3.5, "boar": 2.5}
+        damage_by_feature = {"wolf": 3.8, "bear": 6.5, "snake": 2.5, "boar": 1.8}
         for agent in self.agents:
             if agent.health <= 0:
                 continue
@@ -1013,7 +1017,12 @@ class Simulation:
             if not threats:
                 continue
             feature_id, damage = max(threats, key=lambda pair: pair[1])
-            if self.rng.random() > 0.42:
+            attack_chance = 0.28
+            if agent.best_tool("weapon", 1):
+                attack_chance -= 0.08
+            if agent.armor_rating > 0:
+                attack_chance -= min(0.1, agent.armor_rating * 0.01)
+            if self.rng.random() > max(0.12, attack_chance):
                 continue
             taken = agent.take_damage(damage, source=FEATURES[feature_id].name.lower())
             self.round_events.append(RoundEvent(agent.name, f"{FEATURES[feature_id].name} hurt {agent.name} for {taken:.1f} HP", "danger"))
@@ -1153,6 +1162,8 @@ class Simulation:
             return "unsupported item or recipe claim"
         if self._claims_unknown_recipe(agent, speech):
             return "unknown recipe claim"
+        if self._is_assistant_or_narrator_speech(speech):
+            return "assistant or narrator speech"
         if self._is_formulaic_observation_offer(speech):
             return "formulaic observation offer"
         if self._is_generic_help_offer(speech) and not fresh_question and not self._surplus_inventory_topics(agent):
@@ -1224,6 +1235,8 @@ class Simulation:
 
     def _is_status_update_speech(self, agent: Agent, speech: str) -> bool:
         lowered = speech.lower().strip()
+        if self._is_assistant_or_narrator_speech(speech):
+            return True
         if re.search(r"\b(what would you like to do|center of the map)\b", lowered):
             return True
         if "?" in lowered:
@@ -1235,6 +1248,27 @@ class Simulation:
         if self._has_direct_social_marker(agent, lowered):
             return False
         return False
+
+    @staticmethod
+    def _is_assistant_or_narrator_speech(speech: str) -> bool:
+        lowered = speech.lower().strip()
+        markers = (
+            "where would you like me",
+            "what would you like me",
+            "what would you like to do",
+            "you are currently",
+            "i'm currently stationary",
+            "i am currently stationary",
+            "vast landscape",
+            "diverse terrains",
+            "teeming with life",
+            "to the north lies",
+            "to the south lies",
+            "to the east lies",
+            "to the west lies",
+            "stretches a meadow",
+        )
+        return any(marker in lowered for marker in markers)
 
     def _is_dialogue_speech(self, agent: Agent, speech: str) -> bool:
         lowered = speech.lower()
@@ -1293,6 +1327,14 @@ class Simulation:
             "watch",
             "danger",
             "warning",
+            "wolf",
+            "bear",
+            "snake",
+            "boar",
+            "predator",
+            "hurt",
+            "run",
+            "back up",
         }
         if any(self._contains_marker(lowered, marker) for marker in direct_markers):
             return True
@@ -1568,6 +1610,7 @@ class Simulation:
                 "If placeable_inventory is empty, do not plan or chat about placing campfires, crates, bedrolls, tents, doors, or workbenches yet.",
                 "Move when you are blocked, repositioning toward a visible better target, or avoiding danger.",
                 "Speech is optional and should not describe the action you are taking.",
+                "Never speak like an assistant, narrator, or map guide. Do not say 'you are currently', 'where would you like me to go', or scenic biome descriptions.",
             ],
             "self": {
                 "name": agent.name,
@@ -1643,11 +1686,18 @@ class Simulation:
                 "speech_rules": [
                     "Use speech for replies, questions, offers, requests, warnings, trades, or occasional social remarks.",
                     "Do not say what you are about to move/gather/craft/place; put that in thought instead.",
+                    "Warn people directly and briefly: 'wolf by the workbench' is useful; 'I need to be careful' is private thought.",
+                    "If nobody asked, do not announce routine plans like getting wood, placing a crate, or finding a nearby tree.",
                     "If you have nothing to say to another player, keep speech empty.",
                 ],
                 "blocked_speech_examples": [
                     "I'll move a bit to the right.",
                     "I need to gather more resources.",
+                    "I think I can get wood from that nearby tree.",
+                    "I think there's a good spot here for a wooden crate.",
+                    "You are currently in a vast landscape filled with diverse terrains.",
+                    "I'm currently stationary. Where would you like me to go?",
+                    "I need to be more careful. There's a wolf nearby.",
                     "I'll need some wood to make a campfire.",
                     "I've placed a bedroll here.",
                     "Moving one step to the left.",

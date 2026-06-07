@@ -66,7 +66,19 @@ class World:
         return any(self.tile(nx, ny).feature == station for nx, ny in self.neighbors(x, y, include_center=True))
 
     def place_station(self, x: int, y: int, item_id: str) -> bool:
-        if item_id not in PLACEABLE_ITEMS:
+        if not self.can_place_station(x, y, item_id):
+            return False
+        tile = self.tile(x, y)
+        item = ITEMS[item_id]
+        if "floor" in item.tags:
+            tile.floor = item_id
+            return True
+        tile.feature = item_id
+        tile.hp = FEATURES[item_id].max_hp
+        return True
+
+    def can_place_station(self, x: int, y: int, item_id: str) -> bool:
+        if item_id not in PLACEABLE_ITEMS or not self.in_bounds(x, y):
             return False
         tile = self.tile(x, y)
         item = ITEMS[item_id]
@@ -75,13 +87,11 @@ class World:
         if "floor" in item.tags:
             if tile.floor:
                 return False
-            tile.floor = item_id
-            return True
-        if tile.feature:
-            return False
-        tile.feature = item_id
-        tile.hp = FEATURES[item_id].max_hp
-        return True
+            if not tile.feature:
+                return True
+            feature = FEATURES[tile.feature]
+            return bool(set(feature.tags) & {"station", "storage", "rest", "shelter", "camp"})
+        return tile.feature is None
 
     def advance_wildlife(self, occupied: set[tuple[int, int]] | None = None) -> None:
         occupied = occupied or set()
@@ -110,6 +120,7 @@ class World:
                 if (nx, ny) not in occupied
                 and (nx, ny) not in moved_to
                 and not self.tile(nx, ny).feature
+                and not self.tile(nx, ny).floor
                 and self._wildlife_can_enter(feature_id, self.tile(nx, ny).terrain)
             ]
             if not candidates:
