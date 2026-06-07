@@ -1589,3 +1589,37 @@ Validation:
 Current read:
 
 The mechanical basis for houses now exists. Agents can learn/craft/place floor and wall pieces, and a properly enclosed floor area with a door now matters mechanically. The next AI-behavior challenge is social: agents may still build separate fragments unless we add shared building projects, reserved build sites, and resource contribution memory.
+
+## 2026-06-07 19:35 +03: Building Placement QA And Nearby Walls
+
+Reason:
+
+The first Qwen smoke after adding floors and walls showed a subtle construction blocker:
+
+- Aiden discovered and crafted `Wooden floor`.
+- The agent then kept requesting other placeables or returning to crafting instead of turning the ready floor and wall pieces into an actual build site.
+- The cause was not the recipe system. The urgent placement heuristic refused to consider placeables whenever the agent's current tile already had a feature, even though floors are a separate layer and can be placed under stations or beds.
+
+Implementation:
+
+- Updated urgent placeable selection so it checks for any valid spot in the agent's current cell or adjacent cells.
+- Kept floors as the preferred simple building action when they are already in inventory.
+- Added nearby placement fallback for building pieces:
+  - if a wall or floor cannot be placed on the current tile;
+  - the simulation tries adjacent cells;
+  - occupied cells and water are skipped;
+  - successful adjacent placement reports `placed ... nearby`.
+- Kept non-building placeables conservative:
+  - workbenches, campfires, kilns, tents, crates, doors, and bedrolls still require the current tile.
+
+Validation:
+
+- Ran a targeted Python smoke:
+  - an agent standing on a workbench tile with `Wooden floor` now still chooses `wooden_floor` as the urgent placeable;
+  - `Wooden floor` places on the current tile as a floor layer under the workbench;
+  - `Wooden wall` cannot occupy the workbench tile and correctly places on an adjacent valid tile;
+  - inventory decrements correctly after both placements.
+
+Current read:
+
+This should make early construction noticeably less brittle. The next useful QA pass is a longer Qwen run that watches whether builders lay floor fragments around a station and eventually start enclosing them with walls rather than stockpiling building pieces forever.

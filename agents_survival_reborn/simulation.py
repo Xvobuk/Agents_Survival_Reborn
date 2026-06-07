@@ -583,14 +583,13 @@ class Simulation:
         return None
 
     def _best_urgent_placeable(self, agent: Agent) -> str:
-        current_tile = self.world.tile(agent.x, agent.y)
-        if current_tile.feature or "water" in TERRAINS[current_tile.terrain].tags:
-            return ""
         ranked: list[tuple[int, str]] = []
         priorities = {"campfire": 1, "workbench": 2, "kiln": 3, "tent": 4, "bedroll": 5, "wooden_crate": 6, "wooden_floor": 7, "stone_floor": 7, "wooden_wall": 8, "stone_wall": 8}
         unique_placeables = {"campfire", "workbench", "kiln", "tent", "bedroll", "wooden_crate"}
         for item_id in self._placeable_inventory(agent):
             if item_id in unique_placeables and self._world_has_feature(item_id):
+                continue
+            if not self._has_nearby_place_spot(agent, item_id):
                 continue
             ranked.append((priorities.get(item_id, 9), item_id))
         return sorted(ranked)[0][1] if ranked else ""
@@ -679,6 +678,30 @@ class Simulation:
                 if tile.feature in {"wooden_wall", "stone_wall"}:
                     count += 1
         return count
+
+    def _has_nearby_place_spot(self, agent: Agent, item_id: str) -> bool:
+        if item_id not in PLACEABLE_ITEMS:
+            return False
+        item = ITEMS[item_id]
+        occupied = {(other.x, other.y) for other in self.agents if other.health > 0 and other.agent_id != agent.agent_id}
+        for dx, dy in CENTER_AND_NEIGHBORS:
+            x, y = agent.x + dx, agent.y + dy
+            if not self.world.in_bounds(x, y) or (x, y) in occupied:
+                continue
+            tile = self.world.tile(x, y)
+            if "water" in TERRAINS[tile.terrain].tags:
+                continue
+            if "floor" in item.tags:
+                if not tile.floor:
+                    return True
+            elif not tile.feature:
+                return True
+        return False
+
+    @staticmethod
+    def _is_building_piece(item_id: str) -> bool:
+        item = ITEMS[item_id]
+        return "floor" in item.tags or "wall" in item.tags
 
     @staticmethod
     def _is_needed_tool(agent: Agent, item_id: str) -> bool:
@@ -948,11 +971,26 @@ class Simulation:
         if item_id not in PLACEABLE_ITEMS or agent.inventory.get(item_id, 0) <= 0:
             agent.last_action = "had no placeable item"
             return RoundEvent(agent.name, agent.last_action, "place")
-        if self.world.place_station(agent.x, agent.y, item_id):
+        placed = self.world.place_station(agent.x, agent.y, item_id)
+        placed_nearby = False
+        if not placed and self._is_building_piece(item_id):
+            occupied = {(other.x, other.y) for other in self.agents if other.health > 0}
+            for dx, dy in CENTER_AND_NEIGHBORS:
+                if dx == 0 and dy == 0:
+                    continue
+                x, y = agent.x + dx, agent.y + dy
+                if not self.world.in_bounds(x, y) or (x, y) in occupied:
+                    continue
+                if self.world.place_station(x, y, item_id):
+                    placed = True
+                    placed_nearby = True
+                    break
+        if placed:
             agent.inventory[item_id] -= 1
             if agent.inventory[item_id] <= 0:
                 del agent.inventory[item_id]
-            agent.last_action = f"placed {item_name(item_id)}"
+            suffix = " nearby" if placed_nearby else ""
+            agent.last_action = f"placed {item_name(item_id)}{suffix}"
             return RoundEvent(agent.name, agent.last_action, "place")
         agent.last_action = "could not place that here"
         return RoundEvent(agent.name, agent.last_action, "place")
