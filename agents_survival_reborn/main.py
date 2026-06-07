@@ -37,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-timeout", type=float, default=None, help="Seconds to wait for one model call.")
     parser.add_argument("--llm-workers", type=int, default=None, help="Concurrent model calls. Local Ollama usually likes 1.")
     parser.add_argument("--llm-max-output-tokens", type=int, default=None, help="Token budget for one model decision JSON.")
+    parser.add_argument("--llm-retries", type=int, default=None, help="Retry count for transient hosted API errors such as Gemini 429.")
     parser.add_argument("--agents", type=int, default=AGENT_COUNT)
     parser.add_argument("--width", type=int, default=WORLD_WIDTH)
     parser.add_argument("--height", type=int, default=WORLD_HEIGHT)
@@ -76,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.llm_timeout,
         workers=args.llm_workers,
         max_output_tokens=args.llm_max_output_tokens,
+        retry_count=args.llm_retries,
     )
     if args.gemini_agents is not None or args.gemini_model:
         llm_config = LLMConfig(
@@ -92,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             gemini_model=args.gemini_model or llm_config.gemini_model,
             gemini_api_key=llm_config.gemini_api_key,
             gemini_base_url=llm_config.gemini_base_url,
+            retry_count=llm_config.retry_count,
         )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, llm_config=llm_config)
     try:

@@ -102,7 +102,7 @@ Mixed Qwen/Gemini long tech-progression QA with a starting kit:
 
 ```powershell
 $env:GEMINI_API_KEY="your-gemini-key"
-python tools\run_social_qa.py --rounds 200 --agents 4 --mixed-biome --model qwen2.5:7b --gemini-agents 2 --workers 4 --timeout 120 --max-output-tokens 900 --start-items pine_log=10,stone=10,stick=10,copper_ore=10 --summary-json logs\mixed_qwen_gemini_200_summary.json
+python tools\run_social_qa.py --rounds 200 --agents 4 --mixed-biome --model qwen2.5:7b --gemini-agents 2 --workers 1 --timeout 120 --llm-retries 2 --max-output-tokens 900 --start-items pine_log=10,stone=10,stick=10,copper_ore=10 --summary-json logs\mixed_qwen_gemini_200_summary.json
 ```
 
 `--start-items` grants the listed `item_id=count` kit to every agent after

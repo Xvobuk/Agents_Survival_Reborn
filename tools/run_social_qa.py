@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--max-output-tokens", type=int, default=900)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--llm-retries", type=int, default=2)
     parser.add_argument("--gemini-agents", type=int, default=0)
     parser.add_argument("--gemini-model", default="gemini-2.5-flash")
     parser.add_argument("--start-items", default="", help="Comma-separated item=count kit granted to every agent at spawn.")
@@ -60,6 +61,7 @@ def main() -> int:
         gemini_agent_count=max(0, args.gemini_agents),
         gemini_model=args.gemini_model,
         gemini_api_key=gemini_api_key,
+        retry_count=max(0, args.llm_retries),
     )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, seed=args.seed, llm_config=llm_config)
     try:

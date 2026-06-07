@@ -98,6 +98,7 @@ class LLMConfig:
     gemini_model: str = "gemini-2.5-flash"
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    retry_count: int = 2
 
     @classmethod
     def from_env(
@@ -111,6 +112,7 @@ class LLMConfig:
         timeout: float | None = None,
         workers: int | None = None,
         max_output_tokens: int | None = None,
+        retry_count: int | None = None,
     ) -> "LLMConfig":
         enabled = os.getenv("AGENTS_SURVIVAL_LLM", "").lower() in {"1", "true", "yes", "on"}
         if force_enabled:
@@ -176,6 +178,7 @@ class LLMConfig:
             gemini_model=os.getenv("AGENTS_SURVIVAL_GEMINI_MODEL", "gemini-2.5-flash"),
             gemini_api_key=gemini_api_key,
             gemini_base_url=os.getenv("AGENTS_SURVIVAL_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/"),
+            retry_count=max(0, retry_count if retry_count is not None else int(os.getenv("AGENTS_SURVIVAL_LLM_RETRIES", "2"))),
         )
 
 
@@ -350,7 +353,7 @@ class LLMDirector:
         }
         headers = {"Content-Type": "application/json", "x-goog-api-key": config.api_key}
         request = self._json_request(f"{config.base_url}/models/{config.model}:generateContent", payload, headers)
-        data = self._send_json(request, config.timeout)
+        data = self._send_json_with_retries(request, config.timeout, config.retry_count)
         text = self._extract_gemini_text(data)
         return self._parse_decision_text(text)
 
@@ -402,6 +405,27 @@ class LLMDirector:
     def _send_json(self, request: urllib.request.Request, timeout: float | None = None) -> dict[str, Any]:
         with urllib.request.urlopen(request, timeout=timeout or self.config.timeout) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    def _send_json_with_retries(self, request: urllib.request.Request, timeout: float | None, retries: int) -> dict[str, Any]:
+        attempt = 0
+        while True:
+            try:
+                return self._send_json(request, timeout)
+            except urllib.error.HTTPError as exc:
+                if exc.code not in {429, 500, 502, 503, 504} or attempt >= retries:
+                    raise
+                time.sleep(self._retry_delay(exc, attempt))
+                attempt += 1
+
+    @staticmethod
+    def _retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
+        retry_after = exc.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return max(0.5, min(20.0, float(retry_after)))
+            except ValueError:
+                pass
+        return min(8.0, 1.5 * (2**attempt))
 
     @staticmethod
     def _extract_text(data: dict[str, Any]) -> str:

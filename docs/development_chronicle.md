@@ -2174,3 +2174,38 @@ Validation:
 Current read:
 
 The requested 200-turn test can now be launched repeatably from the command line. I used `pine_log` for "wood" and `copper_ore` for "copper" so agents still need to discover crafting/smelting progression instead of receiving finished copper ingots.
+
+## 2026-06-08 01:20 +03: Gemini Rate Limit Retries
+
+Reason:
+
+The user hit `HTTP Error 429: Too Many Requests` while running mixed Qwen/Gemini QA. This means the Gemini endpoint rejected one or more requests due to rate/quota pressure. The simulation already falls back for failed LLM decisions, but repeated 429s make the Gemini agents behave like fallback agents, which ruins the comparison test.
+
+Implementation:
+
+- Added hosted-API retry support to `LLMConfig`:
+  - `retry_count`;
+  - environment variable `AGENTS_SURVIVAL_LLM_RETRIES`;
+  - CLI flag `--llm-retries` for both PyGame and headless QA.
+- Gemini `generateContent` calls now retry transient HTTP failures:
+  - 429;
+  - 500;
+  - 502;
+  - 503;
+  - 504.
+- Retry delay respects `Retry-After` when the provider sends it.
+- Without `Retry-After`, retries use short exponential backoff.
+- Updated README's 200-round mixed Qwen/Gemini command to use safer `--workers 1` and `--llm-retries 2`.
+
+Validation:
+
+- Mocked 429 retry test passed:
+  - first request raised 429 with `Retry-After: 0.5`;
+  - retry waited and succeeded on the second request.
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- `python tools/run_social_qa.py --help` shows `--llm-retries`.
+- `python run.py --help` shows `--llm-retries`.
+
+Current read:
+
+This improves burst-rate handling, but it cannot bypass a real exhausted Gemini daily quota. If 429 persists across retries with `--workers 1`, the test should either reduce `--gemini-agents`, wait for quota reset, or switch Gemini agents to a cheaper/faster model if available.
