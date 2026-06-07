@@ -1448,3 +1448,67 @@ Validation:
 Current read:
 
 Workbench duplication is blocked, and the first storage/shelter layer now has enough priority to surface after the station milestone. The next full Qwen pass should check that this produces an actual `Wooden crate` placement and that the stricter chat filter leaves fewer helper-script lines without making agents silent again.
+
+## 2026-06-07 14:34 +03: Settlement Pull Toward Existing Stations
+
+Reason:
+
+A 44-round mixed-biome Qwen run tested the anti-duplicate Workbench and stricter `I noticed...` chat filter:
+
+```text
+logs/session_20260607_140044
+```
+
+Good signs:
+
+- 44 rounds completed with 0 LLM fallbacks.
+- Duplicate Workbench crafting did not recur in this run.
+- Aiden discovered and placed `Workbench` by round 17.
+- The stricter formulaic observation filter reduced accepted chat from 25 lines in the previous long run to 6 lines.
+
+Problems:
+
+- The first `Wooden crate` still did not appear.
+- Root cause: after placing `Workbench`, agents drifted away from it. Once they were no longer adjacent, workbench recipes were not craftable/discoverable, so the priority system could not pull `Wooden crate` forward.
+- Several accepted chat lines were still action/status narration:
+  - `I'm currently in a good spot...`;
+  - `You are already at the chosen location.`;
+  - `I'll wait here for now...`;
+  - `I'll use the wooden pickaxe to mine a stone and place it as a wooden crate.`
+- Mira also entered an idle wait streak near the early base area.
+
+Implementation:
+
+- Added settlement pull toward remote stations:
+  - `_needed_remote_station`;
+  - `_nearest_needed_station`;
+  - `_has_station_locked_progress`;
+  - `_move_toward_progress_target`.
+- If a placed `Workbench`, `Campfire`, or `Kiln` exists elsewhere and the agent has materials for a recipe locked behind that station, vague progress movement now targets the station first.
+- `wait` decisions with vague observe/explore language are now converted through `_productive_replacement`, so idle observation can become useful movement/crafting.
+- Expanded status speech filters for:
+  - `I'll wait...`;
+  - `I'll use...`;
+  - `I'll keep...`;
+  - `I'm currently in a good spot...`;
+  - `You are already at the chosen location.`
+
+Validation:
+
+- Targeted remote-station snapshot:
+  - existing world `Workbench` at a distance;
+  - agent with `5 Plank + 8 Stick`;
+  - idle `wait` now adjusts to `move toward Workbench`.
+- Targeted adjacent-station snapshot:
+  - same inventory adjacent to `Workbench`;
+  - movement now adjusts to `experiment` for `Wooden crate`.
+- Targeted speech snapshot:
+  - the four bad accepted chat styles above are now blocked as `status update instead of dialogue`;
+  - concrete crate request `Do you have two spare sticks for a crate?` remains allowed.
+- `compileall` passed.
+- Targeted `py_compile` passed for `simulation.py`.
+- `tools/generate_missing_sprites.py` reported `written=0 skipped=143`.
+
+Current read:
+
+This is the first small step toward actual settlement behavior: placed stations now act as anchors that agents can return to when their inventory makes station recipes possible. The next Qwen pass should verify whether that finally produces a placed `Wooden crate`, and whether the chat volume remains low-but-human rather than silent.

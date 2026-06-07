@@ -33,6 +33,9 @@ STATUS_UPDATE_PATTERNS = (
     r"\bnearby player\b",
     r"\b(i'?ll|i will)\s+keep\s+(moving|exploring|looking|searching|scouting)\b",
     r"\b(i'?ll|i will)\s+(head|stay|follow)\b",
+    r"\b(i'?ll|i will)\s+(wait|use|keep)\b",
+    r"\b(i'?m|i am|im)\s+currently\s+in\s+a\s+good\s+spot\b",
+    r"\byou are already at the chosen location\b",
     r"\blet'?s\s+(move|explore|check|search|look|find|gather|start)\b",
     r"\b(i'?ll|i will|i'?m|i am|im)\s+keep\s+an\s+eye\s+out\b",
     r"\b(keep|keeping)\s+(my\s+)?(eyes?|eye)\s+(out|peeled)\b",
@@ -264,6 +267,8 @@ class Simulation:
             return self._productive_replacement(agent, decision, "imagined place plan replaced")
         if decision.action in {"move", "interact", "talk"} and self._should_break_gather_loop(agent):
             return self._productive_replacement(agent, decision, "repeated gathering converted to progression")
+        if decision.action == "wait" and self._looks_like_vague_exploration(decision):
+            return self._productive_replacement(agent, decision, "idle wait converted to progression")
         if decision.action == "talk":
             option = self._best_immediate_interaction(agent)
             if not option:
@@ -305,9 +310,15 @@ class Simulation:
     def _progress_exploration_move(self, agent: Agent, decision: Decision) -> Decision | None:
         if not self._needs_progress_exploration(agent):
             return None
+        station_target = self._nearest_needed_station(agent)
+        if station_target:
+            return self._move_toward_progress_target(agent, decision, station_target)
         target = self._best_visible_progress_target(agent)
         if not target:
             return None
+        return self._move_toward_progress_target(agent, decision, target)
+
+    def _move_toward_progress_target(self, agent: Agent, decision: Decision, target: tuple[int, int, str]) -> Decision | None:
         dx = _sign(target[0] - agent.x)
         dy = _sign(target[1] - agent.y)
         if dx == 0 and dy == 0:
@@ -345,8 +356,9 @@ class Simulation:
             thought=f"I have enough basics for now; {label} is the next useful lead.",
         )
 
-    @staticmethod
-    def _needs_progress_exploration(agent: Agent) -> bool:
+    def _needs_progress_exploration(self, agent: Agent) -> bool:
+        if self._nearest_needed_station(agent):
+            return True
         has_basics = agent.inventory.get("cordage", 0) >= 1 or agent.inventory.get("grass_fiber", 0) >= 6
         has_sticks = agent.inventory.get("stick", 0) >= 3
         stone_like = agent.inventory.get("stone", 0) + agent.inventory.get("pebble", 0) // 3
@@ -366,6 +378,36 @@ class Simulation:
         if needs_logs_with_axe:
             return True
         return has_basics and (needs_stick_for_tool or has_sticks or repeated_ground) and needs_progress_material
+
+    def _nearest_needed_station(self, agent: Agent) -> tuple[int, int, str] | None:
+        station_id = self._needed_remote_station(agent)
+        if not station_id or self.world.has_station_near(agent.x, agent.y, station_id):
+            return None
+        candidates: list[tuple[int, int, int]] = []
+        for y, row in enumerate(self.world.tiles):
+            for x, tile in enumerate(row):
+                if tile.feature == station_id:
+                    candidates.append((max(abs(x - agent.x), abs(y - agent.y)), x, y))
+        if not candidates:
+            return None
+        _distance, x, y = sorted(candidates)[0]
+        return x, y, item_name(station_id)
+
+    def _needed_remote_station(self, agent: Agent) -> str:
+        for station_id in ("workbench", "campfire", "kiln"):
+            if not self._world_has_feature(station_id) or self.world.has_station_near(agent.x, agent.y, station_id):
+                continue
+            if self._has_station_locked_progress(agent, station_id):
+                return station_id
+        return ""
+
+    def _has_station_locked_progress(self, agent: Agent, station_id: str) -> bool:
+        for recipe in RECIPES_BY_ID.values():
+            if recipe.station != station_id:
+                continue
+            if has_ingredients(agent.inventory, recipe) and has_output_space(agent, recipe) and self._craft_priority(agent, recipe) < 999:
+                return True
+        return False
 
     def _best_visible_progress_target(self, agent: Agent) -> tuple[int, int, str] | None:
         candidates: list[tuple[int, int, int, str]] = []
