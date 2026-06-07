@@ -2137,3 +2137,40 @@ Validation:
 Current read:
 
 This does not make agents smarter by itself, but it keeps the observer-facing mind log from being poisoned by malformed local-model output. That matters now that thoughts are part of the actual viewing experience.
+
+## 2026-06-08 01:10 +03: Starting Kit For Long Mixed-Model QA
+
+Reason:
+
+The user wanted a 200-turn comparison run with 2 Qwen agents and 2 Gemini agents, with every agent receiving a starting resource kit:
+
+- 10 wood;
+- 10 stone;
+- 10 sticks;
+- 10 copper.
+
+Implementation:
+
+- Added reusable `parse_start_items()` for comma-separated `item_id=count` kits.
+- Added `Simulation.grant_starting_items()` to grant the same kit to every spawned agent.
+- Added `--start-items` to the PyGame launcher.
+- Added `--start-items` to `tools/run_social_qa.py`.
+- Fixed `tools/run_social_qa.py` Gemini key handling:
+  - mixed Gemini agents use `GEMINI_API_KEY` or `AGENTS_SURVIVAL_GEMINI_API_KEY`;
+  - pure `--provider gemini` also receives the Gemini API key.
+- Documented the 200-round mixed Qwen/Gemini QA command in README.
+
+Validation:
+
+- Targeted start-kit test passed:
+  - parsed `pine_log=10,stone=10,stick=10,copper_ore=10`;
+  - granted the kit to all agents;
+  - stayed within the 15 distinct item slot limit.
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- Offline headless QA with the starting kit passed for 2 rounds / 4 agents:
+  - agents immediately discovered and crafted planks from the supplied logs.
+- `python run.py --help` shows the new `--start-items` option.
+
+Current read:
+
+The requested 200-turn test can now be launched repeatably from the command line. I used `pine_log` for "wood" and `copper_ore` for "copper" so agents still need to discover crafting/smelting progression instead of receiving finished copper ingots.

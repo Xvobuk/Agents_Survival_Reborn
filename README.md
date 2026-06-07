@@ -98,6 +98,17 @@ $env:GEMINI_API_KEY="your-gemini-key"
 python tools\run_social_qa.py --rounds 4 --agents 4 --cluster --model qwen2.5:7b --gemini-agents 2 --workers 4 --timeout 90
 ```
 
+Mixed Qwen/Gemini long tech-progression QA with a starting kit:
+
+```powershell
+$env:GEMINI_API_KEY="your-gemini-key"
+python tools\run_social_qa.py --rounds 200 --agents 4 --mixed-biome --model qwen2.5:7b --gemini-agents 2 --workers 4 --timeout 120 --max-output-tokens 900 --start-items pine_log=10,stone=10,stick=10,copper_ore=10 --summary-json logs\mixed_qwen_gemini_200_summary.json
+```
+
+`--start-items` grants the listed `item_id=count` kit to every agent after
+spawn. The example gives each agent 10 pine logs, 10 stone, 10 sticks, and 10
+copper ore.
+
 This runs without the PyGame window, clusters agents for chat testing, and
 prints a summary of actions, accepted chat, blocked speech, and recent thoughts.
 Use `--mixed-biome` instead of `--cluster` when testing crafting and tech

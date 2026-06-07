@@ -21,6 +21,7 @@ from .constants import (
 from .llm import Decision, LLMConfig
 from .renderer import Camera, Renderer
 from .simulation import Simulation
+from .start_items import parse_start_items
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=WORLD_WIDTH)
     parser.add_argument("--height", type=int, default=WORLD_HEIGHT)
     parser.add_argument("--round-frames", type=int, default=ROUND_FRAMES)
+    parser.add_argument("--start-items", default="", help="Comma-separated item=count kit granted to every agent at spawn.")
     parser.add_argument("--asset-wizard", action="store_true", help="Ask for missing sprite files before launch.")
     parser.add_argument("--no-record", action="store_true", help="Deprecated: screen videos are no longer recorded; replay JSONL is always written.")
     return parser
@@ -92,6 +94,12 @@ def main(argv: list[str] | None = None) -> int:
             gemini_base_url=llm_config.gemini_base_url,
         )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, llm_config=llm_config)
+    try:
+        start_items = parse_start_items(args.start_items)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if start_items:
+        sim.grant_starting_items(start_items)
     camera = Camera()
     selected = 0
     paused = False

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -17,6 +18,7 @@ from agents_survival_reborn.constants import CHAT_RADIUS, DEFAULT_SEED
 from agents_survival_reborn.data import FEATURES, TERRAINS
 from agents_survival_reborn.llm import LLMConfig
 from agents_survival_reborn.simulation import Simulation
+from agents_survival_reborn.start_items import parse_start_items
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--gemini-agents", type=int, default=0)
     parser.add_argument("--gemini-model", default="gemini-2.5-flash")
+    parser.add_argument("--start-items", default="", help="Comma-separated item=count kit granted to every agent at spawn.")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--cluster", action="store_true", help="Move agents into one small starting group.")
     parser.add_argument("--mixed-biome", action="store_true", help="Cluster agents near varied progression terrain for tech-path QA.")
@@ -43,10 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    gemini_api_key = os.getenv("AGENTS_SURVIVAL_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+    api_key = os.getenv("AGENTS_SURVIVAL_API_KEY") or (gemini_api_key if args.provider.lower() in {"gemini", "google"} else "")
     llm_config = LLMConfig(
         enabled=not args.offline,
         model=args.model,
-        api_key="",
+        api_key=api_key,
         provider=args.provider,
         base_url=args.base_url.rstrip("/"),
         timeout=args.timeout,
@@ -54,8 +59,15 @@ def main() -> int:
         max_output_tokens=args.max_output_tokens,
         gemini_agent_count=max(0, args.gemini_agents),
         gemini_model=args.gemini_model,
+        gemini_api_key=gemini_api_key,
     )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, seed=args.seed, llm_config=llm_config)
+    try:
+        start_items = parse_start_items(args.start_items)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if start_items:
+        sim.grant_starting_items(start_items)
     if args.mixed_biome:
         cluster_agents(sim, center=find_mixed_biome_center(sim))
     elif args.cluster:

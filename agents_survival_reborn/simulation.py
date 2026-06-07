@@ -150,6 +150,14 @@ class Simulation:
         self.round_events: list[RoundEvent] = []
         self.logger = RunLogger(seed=seed, width=width, height=height, agent_count=agent_count)
         self._spawn(agent_count)
+
+    def grant_starting_items(self, items: Counter[str] | dict[str, int]) -> None:
+        for agent in self.agents:
+            accepted = agent.add_items(items)
+            if accepted:
+                note = ", ".join(f"{count} {item_name(item_id)}" for item_id, count in sorted(accepted.items()))
+                agent.remember(f"Started with test supplies: {note}.")
+                agent.last_action = f"received test supplies: {note}"
         self.logger.write_world(self._world_replay_payload())
 
     def advance_round(self) -> None:
