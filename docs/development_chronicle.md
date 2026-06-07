@@ -1623,3 +1623,44 @@ Validation:
 Current read:
 
 This should make early construction noticeably less brittle. The next useful QA pass is a longer Qwen run that watches whether builders lay floor fragments around a station and eventually start enclosing them with walls rather than stockpiling building pieces forever.
+
+## 2026-06-07 20:12 +03: Imported ChatGPT Building Sprites
+
+Reason:
+
+The user supplied a new building atlas with transparent-looking art for floors, walls, and a door. The previous building pieces were still placeholder PNGs, so houses worked mechanically but looked flat.
+
+Implementation:
+
+- Added `tools/import_building_atlas.py`:
+  - reads a ChatGPT-style building atlas;
+  - detects 12 large sprite components automatically instead of requiring a perfect grid;
+  - falls back to non-black pixel detection when a clipboard/export path loses true alpha;
+  - writes game-ready 32x32 PNGs;
+  - saves a debug preview with detected boxes when requested.
+- Saved the pasted atlas from the Windows clipboard into `assets/generated/building_atlas_clipboard.png`.
+- Imported new sprites:
+  - `item_wooden_floor`;
+  - `item_stone_floor`;
+  - `feature_wooden_wall`;
+  - `feature_stone_wall`;
+  - `feature_wooden_door`;
+  - `item_wooden_door`;
+  - `item_wooden_wall`;
+  - `item_stone_wall`.
+- Saved visual QA outputs:
+  - `assets/generated/building_atlas_detected.png`;
+  - `assets/generated/building_sprites_contact.png`.
+
+Validation:
+
+- The importer detected exactly 12 usable sprite components in the atlas.
+- Alpha sanity check confirmed:
+  - floor tiles are nearly full-tile sprites;
+  - wall and door sprites retain transparent space around the object;
+  - no imported sprite remains a fully opaque black square.
+- Visual contact sheet confirmed the new floor, wall, and door art is readable at 32x32.
+
+Current read:
+
+The building loop now has both mechanics and real art. The next visual pass should watch a live or replayed settlement build and decide whether the full-height wall sprites read better than the compact wall icons in the world layer.
