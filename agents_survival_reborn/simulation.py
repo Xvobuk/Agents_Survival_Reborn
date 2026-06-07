@@ -253,6 +253,13 @@ class Simulation:
             if decision.place_item not in PLACEABLE_ITEMS or agent.inventory.get(decision.place_item, 0) <= 0:
                 return self._productive_replacement(agent, decision, "invalid place replaced")
             return decision, ""
+        if decision.action in {"move", "interact", "talk", "experiment", "wait"} and self._looks_like_unsupported_world_plan(decision):
+            return self._productive_replacement(agent, decision, "unsupported world plan replaced")
+        if decision.action in {"move", "interact", "talk", "wait"}:
+            urgent = self._urgent_progression_decision(agent, decision)
+            if urgent:
+                agent.last_intent = urgent.intent
+                return urgent, "urgent progression opportunity used"
         if decision.action in {"move", "interact", "talk"} and self._looks_like_invalid_place_plan(agent, decision):
             return self._productive_replacement(agent, decision, "imagined place plan replaced")
         if decision.action in {"move", "interact", "talk"} and self._should_break_gather_loop(agent):
@@ -417,6 +424,15 @@ class Simulation:
             return False
         return all(agent.inventory.get(item_id, 0) <= 0 for item_id in mentioned)
 
+    @staticmethod
+    def _looks_like_unsupported_world_plan(decision: Decision) -> bool:
+        text = f"{decision.intent} {decision.thought} {decision.speech} {decision.private_memory}".lower()
+        unsupported_patterns = (
+            r"\bplant(?:ing)?\s+(?:a|an|the|some)?\s*(?:birch|oak|pine|fruit\s*tree|tree)\b",
+            r"\bgrow(?:ing)?\s+(?:a|an|the|some)?\s*(?:birch|oak|pine|fruit\s*tree|tree)\b",
+        )
+        return any(re.search(pattern, text) for pattern in unsupported_patterns)
+
     def _should_break_gather_loop(self, agent: Agent) -> bool:
         if craftable_known(agent, self.world) or discoverable(agent, self.world):
             recent = " ".join(list(agent.recent_actions)[-6:]).lower()
@@ -439,6 +455,10 @@ class Simulation:
         return False
 
     def _productive_replacement(self, agent: Agent, decision: Decision, reason: str) -> tuple[Decision, str]:
+        urgent = self._urgent_progression_decision(agent, decision)
+        if urgent:
+            agent.last_intent = urgent.intent
+            return urgent, reason
         recipe = self._best_known_craft(agent)
         discoverable_recipe = self._best_discoverable(agent)
         recipe_priority = self._craft_priority(agent, recipe) if recipe else 999
@@ -487,6 +507,50 @@ class Simulation:
             agent.last_intent = adjusted.intent
             return adjusted, reason
         return Decision("wait", speech=decision.speech, private_memory=decision.private_memory, intent="avoid invalid action", thought="I caught myself trying something invalid, so I need to reassess."), reason
+
+    def _urgent_progression_decision(self, agent: Agent, decision: Decision) -> Decision | None:
+        place_item = self._best_urgent_placeable(agent)
+        if place_item:
+            return Decision(
+                action="place",
+                place_item=place_item,
+                speech=decision.speech,
+                private_memory=decision.private_memory,
+                intent=f"place ready {item_name(place_item)}",
+                thought=f"{item_name(place_item)} is already in my pack; setting it down unlocks more than wandering does.",
+            )
+        recipe = self._best_known_craft(agent)
+        if recipe and self._craft_priority(agent, recipe) <= 3:
+            return Decision(
+                action="craft",
+                recipe_id=recipe.recipe_id,
+                speech=decision.speech,
+                private_memory=decision.private_memory,
+                intent=f"craft key recipe {recipe.name}",
+                thought=f"{recipe.name} is a real step forward now, so I should make it before drifting off.",
+            )
+        discoverable_recipe = self._best_discoverable(agent)
+        if discoverable_recipe and self._craft_priority(agent, discoverable_recipe) <= 3:
+            return Decision(
+                action="experiment",
+                speech=decision.speech,
+                private_memory=decision.private_memory,
+                intent=f"test key materials for {discoverable_recipe.name}",
+                thought=f"The materials line up for {discoverable_recipe.name}; this is the moment to test that idea.",
+            )
+        return None
+
+    def _best_urgent_placeable(self, agent: Agent) -> str:
+        current_tile = self.world.tile(agent.x, agent.y)
+        if current_tile.feature or "water" in TERRAINS[current_tile.terrain].tags:
+            return ""
+        ranked: list[tuple[int, str]] = []
+        priorities = {"campfire": 1, "workbench": 2, "kiln": 3, "tent": 4, "bedroll": 5, "wooden_crate": 6}
+        for item_id in self._placeable_inventory(agent):
+            if self.world.has_station_near(agent.x, agent.y, item_id):
+                continue
+            ranked.append((priorities.get(item_id, 9), item_id))
+        return sorted(ranked)[0][1] if ranked else ""
 
     def _best_known_craft(self, agent: Agent) -> RecipeDef | None:
         candidates = craftable_known(agent, self.world)

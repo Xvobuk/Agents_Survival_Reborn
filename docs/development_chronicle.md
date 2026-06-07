@@ -1285,3 +1285,50 @@ Validation:
 Current read:
 
 The chain now reaches `Rough planks`; the next target is getting agents from `3 Plank` to the fourth plank and then discovering/crafting/placing `Workbench`.
+
+## 2026-06-07 13:28 +03: Urgent Station Progression And Unsupported Planting Guard
+
+Reason:
+
+The next autonomous QA pass inspected the 30-round Qwen workbench-push session:
+
+```text
+logs/session_20260607_130757
+```
+
+The run had good signs: 30 rounds completed with 0 LLM fallbacks, Mira crafted `Stone axe`, harvested Birch logs, discovered `Rough planks`, and reached `6 Plank + 9 Stick + 1 Cordage`. That inventory is enough to discover and craft `Workbench`.
+
+Problem:
+
+Mira still did not discover/craft/place the `Workbench`. The remaining gap was not the recipe data; it was decision arbitration. The model could choose a valid movement turn, so the existing replacement logic did not always intervene even when a high-value station recipe was immediately discoverable.
+
+Implementation:
+
+- Added `_urgent_progression_decision` to `simulation.py`.
+- Movement, interaction, talk, and wait decisions now yield to urgent progression when:
+  - a placeable station is already in inventory and the current tile can accept it;
+  - a known high-priority craft is available (`Campfire`, `Workbench`, `Kiln`, or plank bridge);
+  - a high-priority recipe is discoverable from current materials.
+- `_productive_replacement` now also checks urgent progression before lower-value alternatives.
+- Added `_best_urgent_placeable` so ready stations are actually placed instead of carried forever.
+- Added `_looks_like_unsupported_world_plan` to catch unsupported fantasy actions such as planting Birch/Oak/Pine/Fruit trees through `experiment`, then redirect them into real progression.
+
+Validation:
+
+- Targeted progression snapshot:
+  - `6 Plank + 9 Stick + 1 Cordage`, recipe unknown -> adjusted to `experiment` for `Workbench`;
+  - same inventory with `workbench` known -> adjusted to `craft workbench`;
+  - `Workbench` in inventory on a clear Grass tile -> adjusted to `place workbench`.
+- Targeted unsupported-plan snapshot:
+  - `experiment` with intent/thought/speech about planting a Birch tree -> replaced with a real `Cordage` discovery experiment.
+- Short live Qwen smoke:
+  - `logs/session_20260607_132057`;
+  - 10 rounds, 3 agents, 0 LLM fallbacks;
+  - actions: `move` 11, `interact` 14, `experiment` 5;
+  - chat stayed empty because 21 proposed lines were blocked as status/non-dialogue, including unsupported planting chatter.
+- `compileall` passed.
+- `tools/generate_missing_sprites.py` reported `written=0 skipped=143`.
+
+Current read:
+
+The workbench chain now has explicit mechanical pressure at all three steps: discover, craft, and place. The next longer QA pass should confirm that Mira/Aiden actually leave a placed `Workbench` in replay state once they reach the same material threshold again.
