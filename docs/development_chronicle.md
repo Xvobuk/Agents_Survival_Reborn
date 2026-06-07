@@ -1899,3 +1899,49 @@ Validation:
 Current read:
 
 Most of the new progression layer now has real art. One final small atlas focused only on these 19 leftovers should finish the current placeholder cleanup without asking ChatGPT to juggle the whole progression tree again.
+
+## 2026-06-07 22:12 +03: Imported Final Leftover Atlas
+
+Reason:
+
+The user supplied another ChatGPT atlas for the remaining placeholders. It again ignored the requested strict grid, but it contained enough clear objects to remove most of the remaining abstract placeholder sprites.
+
+Implementation:
+
+- Added `tools/import_final_leftovers_atlas.py`:
+  - detects large alpha components globally;
+  - sorts by visual row/column;
+  - maps only visually clear leftovers;
+  - skips duplicate bottle/potion/rod variants;
+  - writes contact and detection previews.
+- Imported 15 sprite ids:
+  - `item_glass_bottle`;
+  - `item_cactus_flesh`;
+  - `item_crab_meat`;
+  - `item_cooked_fish`;
+  - `item_fried_egg`;
+  - `item_diamond_edged_sword`;
+  - `item_gold_necklace`;
+  - `item_diamond_amulet`;
+  - `item_resin`;
+  - `item_leather_gloves`;
+  - `item_leather_cap`;
+  - `item_iron_boots`;
+  - `item_antidote`;
+  - `item_wooden_pickaxe`;
+  - `item_fishing_rod`.
+
+Validation:
+
+- Visual contact sheet looked clean at 32x32.
+- Placeholder-size scan now reports 6 remaining tiny placeholders:
+  - `item_cooked_crab`;
+  - `item_diamond_edged_pickaxe`;
+  - `item_copper_ring`;
+  - `item_leather_pants`;
+  - `item_iron_gauntlets`;
+  - `item_iron_greaves`.
+
+Current read:
+
+The project is now close to full sprite coverage. The remaining six are specific enough that the next prompt should ask only for those six objects, preferably with two rows of three sprites and lots of padding.
