@@ -1332,3 +1332,56 @@ Validation:
 Current read:
 
 The workbench chain now has explicit mechanical pressure at all three steps: discover, craft, and place. The next longer QA pass should confirm that Mira/Aiden actually leave a placed `Workbench` in replay state once they reach the same material threshold again.
+
+## 2026-06-07 13:44 +03: Workbench Placement Verified And Cordage Bridge Tightened
+
+Reason:
+
+A longer 36-round mixed-biome Qwen run tested the urgent station progression fix:
+
+```text
+logs/session_20260607_132609
+```
+
+Good signs:
+
+- 36 rounds completed with 0 LLM fallbacks.
+- The run produced the first full station chain in live QA:
+  - round 33: Aiden discovered `Workbench` and made 1 `Workbench`;
+  - round 34: Aiden placed `Workbench`;
+  - `replay.jsonl` showed `feature:"workbench"` at `x=35,y=4`.
+- Inventory limits stayed within the 15-slot cap in replay state.
+- Generated sprite check still reported `written=0 skipped=143`.
+
+Problems:
+
+- Mira reached `6 Plank + 5 Stick + 7 Grass fiber`, which is almost enough for `Workbench`, but kept trying nearby `Stone outcrop` interactions because she had not converted fiber into `Cordage`.
+- One private-memory note slipped through as a phantom station plan:
+  - `Placing a campfire in a strategic location can provide warmth and light during my exploration...`
+  - Noah did not own a `Campfire`, had not placed one, and the note would look like false internal continuity when reviewing thoughts.
+
+Implementation:
+
+- Raised `cordage_from_fiber` to priority 2 when:
+  - no `Workbench` item/station is available;
+  - the agent already has at least 4 `Plank` and 2 `Stick`;
+  - the agent has no `Cordage`.
+- This turns `Cordage` into a key bridge craft only when it directly unlocks `Workbench`, without making agents overproduce rope-like materials later.
+- Added `_memory_imagines_unowned_placeable` to reject private-memory notes about placing/building/setting up a placeable item when the agent does not own that item and no nearby matching station exists.
+
+Validation:
+
+- Targeted Mira-like snapshot:
+  - inventory: `6 Plank + 5 Stick + 7 Grass fiber + Stone axe`;
+  - known recipes: `Cordage`, `Pebble axe`, `Rough planks`, `Split sticks`;
+  - a movement decision now adjusts to `craft cordage_from_fiber`;
+  - `cordage_from_fiber` priority is now `2` in that state.
+- Targeted memory snapshot:
+  - phantom campfire placement memory with no `Campfire` -> rejected;
+  - the same note with `Campfire` in inventory -> accepted.
+- `compileall` passed.
+- `tools/generate_missing_sprites.py` reported `written=0 skipped=143`.
+
+Current read:
+
+The first station milestone is now proven in replay and the obvious pre-workbench bridge gap is closed. The next QA focus should move one layer up: whether agents actually use the placed `Workbench` to discover/work toward `Fish net`, `Kiln`, better tools, storage, and shelter instead of treating the station as decorative scenery.

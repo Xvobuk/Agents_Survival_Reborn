@@ -586,6 +586,8 @@ class Simulation:
                 return 4
             return 7 if agent.inventory.get("stick", 0) < 10 else 999
         if recipe.recipe_id == "cordage_from_fiber":
+            if not self._has_item_or_station(agent, "workbench") and agent.inventory.get("plank", 0) >= 4 and agent.inventory.get("stick", 0) >= 2 and agent.inventory.get("cordage", 0) < 1:
+                return 2
             return 6 if agent.inventory.get("cordage", 0) < 4 else 999
         if recipe.recipe_id == "stone_from_pebbles":
             return 6 if agent.inventory.get("stone", 0) < 5 else 999
@@ -658,6 +660,8 @@ class Simulation:
         if self._has_unsupported_speech_term(note):
             return ""
         result = event.text.lower()
+        if self._memory_imagines_unowned_placeable(agent, note, result):
+            return ""
         unsupported_action_claims = {
             "placed": "placed" not in result,
             "crafted": "crafted" not in result,
@@ -682,6 +686,20 @@ class Simulation:
             if current not in compact and event.kind not in {"move", "place"}:
                 return ""
         return note
+
+    def _memory_imagines_unowned_placeable(self, agent: Agent, note: str, result: str) -> bool:
+        lowered = note.lower()
+        if "placed" in result:
+            return False
+        if not re.search(r"\b(placing|place|set up|setup|build|building|built)\b", lowered):
+            return False
+        for item_id in PLACEABLE_ITEMS:
+            item_label = item_name(item_id).lower()
+            if item_id.replace("_", " ") not in lowered and item_label not in lowered:
+                continue
+            if agent.inventory.get(item_id, 0) <= 0 and not self.world.has_station_near(agent.x, agent.y, item_id):
+                return True
+        return False
 
     @staticmethod
     def _looks_like_vague_exploration(decision: Decision) -> bool:
