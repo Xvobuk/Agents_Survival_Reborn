@@ -111,6 +111,14 @@ class Renderer:
         y = self._stat_row(screen, "ui_health", "HP", agent.health, x, y, (216, 72, 82))
         y = self._stat_row(screen, "ui_hunger", "Food", agent.hunger, x, y, (226, 165, 72))
         y = self._stat_row(screen, "ui_energy", "Stamina", agent.energy, x, y, (78, 181, 226))
+        equipment = getattr(agent, "equipment", {})
+        rings = getattr(agent, "rings", [])
+        armor = getattr(agent, "armor_rating", 0)
+        worn = [item_name(item_id) for item_id in equipment.values()]
+        if rings:
+            worn.append(f"{len(rings)} ring{'s' if len(rings) != 1 else ''}")
+        gear_text = ", ".join(worn[:4]) if worn else "none"
+        y = self._wrap(screen, f"Armor {armor}: {gear_text}", x, y, 360, self.small, (178, 194, 211))
         y = self._wrap(screen, f"Intent: {agent.last_intent}", x, y, 360, self.small, (215, 218, 222))
         y = self._wrap(screen, f"Thought: {agent.last_thought}", x, y, 360, self.small, (184, 214, 190))
         y = self._wrap(screen, f"Last: {agent.last_action}", x, y, 360, self.small, (215, 218, 222))

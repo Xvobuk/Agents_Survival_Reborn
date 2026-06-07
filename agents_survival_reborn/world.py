@@ -133,7 +133,7 @@ class World:
 
     def _interact_feature(self, agent: object, tile: Tile, x: int, y: int) -> Interaction:
         feature = FEATURES[tile.feature or ""]
-        if feature.feature_id in {"workbench", "campfire", "kiln"}:
+        if feature.feature_id in {"workbench", "campfire", "kiln", "potion_stand"}:
             return Interaction(True, f"checked {feature.name.lower()}", Counter(), "station")
         if feature.feature_id == "tent":
             agent.energy = min(100.0, agent.energy + 18.0)
@@ -205,8 +205,10 @@ class World:
             return terrain in {"swamp", "coast", "shallow_water"} or "wet" in terrain_tags
         if feature_id == "rabbit":
             return terrain in {"grass", "meadow", "forest_floor", "tundra"}
-        if feature_id in {"deer", "fox", "boar"}:
+        if feature_id in {"deer", "fox", "boar", "wolf", "bear"}:
             return terrain in {"forest_floor", "jungle", "meadow", "grass", "mushroom_grove"}
+        if feature_id == "snake":
+            return terrain in {"sand", "badlands", "grass", "meadow", "coast"}
         return TERRAINS[terrain].passable
 
     def _interact_terrain(self, agent: object, tile: Tile) -> Interaction:
@@ -488,12 +490,16 @@ class World:
                 return "crab"
             if roll < 0.09:
                 return "gull"
+            if roll < 0.098:
+                return "snake"
             if roll < 0.11:
                 return "stone_outcrop"
             return None
         if terrain in {"grass", "meadow"}:
             if roll < 0.055:
                 return "rabbit"
+            if roll < 0.065:
+                return "snake"
             if roll < 0.08:
                 return "grass_tuft"
             if roll < 0.13:
@@ -505,6 +511,8 @@ class World:
         if terrain in {"forest_floor", "jungle"}:
             if roll < 0.04:
                 return self.rng.choice(("rabbit", "deer", "fox", "boar"))
+            if roll < 0.055:
+                return self.rng.choice(("wolf", "bear"))
             if roll < 0.16:
                 return self.rng.choice(("birch_tree", "oak_tree", "pine_tree", "fruit_tree"))
             if roll < 0.22:

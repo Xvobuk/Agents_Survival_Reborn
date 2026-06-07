@@ -1711,3 +1711,109 @@ Validation:
 Current read:
 
 The world should now look much more alive: most animal placeholders are gone, and common early crafting/storage visuals are no longer abstract boxes. One final small atlas focused only on the 10 remaining sprites should finish the placeholder cleanup.
+
+## 2026-06-07 21:35 +03: Advanced Metals, Alchemy, Equipment, And Hostile Wildlife
+
+Reason:
+
+The user asked for a much deeper sandbox progression layer:
+
+- copper, iron, gold, diamond progression;
+- missing metal tools and weapons;
+- gold and diamond jewelry;
+- diamond-coated tools;
+- campfire/kiln/alchemy chain with glass bottles and potions;
+- hostile predators that can hurt agents;
+- equipment slots for armor and rings;
+- item durability;
+- better crafting output quality when stations are inside larger houses;
+- a new prompt for the next sprite atlas.
+
+Implementation:
+
+- Expanded `ItemDef` with:
+  - `equip_slot`;
+  - `armor`.
+- Added hostile features:
+  - `Wolf`;
+  - `Bear`;
+  - `Snake`.
+- Added station:
+  - `Potion stand`.
+- Added materials and alchemy items:
+  - `Glass bottle`;
+  - `Hide`;
+  - `Leather`;
+  - `Venom sac`;
+  - `Healing potion`;
+  - `Stamina potion`;
+  - `Antidote`.
+- Added tools and weapons:
+  - `Copper axe`;
+  - `Copper sword`;
+  - `Iron axe`;
+  - `Iron sword`;
+  - `Diamond-edged pickaxe`;
+  - `Diamond-edged sword`.
+- Added jewelry:
+  - `Copper ring`;
+  - `Gold ring`;
+  - `Gold necklace`;
+  - `Diamond ring`;
+  - `Diamond amulet`.
+- Added armor:
+  - leather head/hands/chest/legs/feet set;
+  - iron head/hands/chest/legs/feet set.
+- Added recipes for:
+  - glass from sand in the kiln;
+  - glass bottles in the kiln;
+  - potion stand;
+  - gold ingots;
+  - leather;
+  - new tools/weapons;
+  - jewelry;
+  - leather and iron armor;
+  - healing/stamina/antidote potions.
+- Added `potion_stand` to placeables.
+- Updated world behavior:
+  - wolves, bears, and snakes can spawn in appropriate biomes;
+  - hostile wildlife can move using the existing wildlife movement system;
+  - hostile wildlife near agents can deal HP damage.
+- Updated agent behavior:
+  - agents now have equipment slots: head, hands, chest, legs, feet, neck;
+  - agents can wear up to 10 rings;
+  - agents auto-equip better armor/jewelry after crafting or when available;
+  - armor rating reduces incoming damage;
+  - equipped armor loses durability when absorbing damage;
+  - potions have direct effects through the existing eat/use-food action.
+- Updated crafting quality:
+  - crafting at a station inside an enclosed house gives quality bonus based on house size;
+  - quality increases tool/armor durability;
+  - quality improves crafted food/potion effect through per-agent food quality.
+- Updated HUD/replay/context:
+  - HUD shows armor and equipped items;
+  - LLM context includes armor/equipment/rings;
+  - replay frames include armor/equipment/rings.
+- Added sprite prompt:
+  - `docs/advanced_progression_sprite_prompt.md`.
+- Generated 33 new placeholder sprites for the new objects.
+
+Validation:
+
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- `tools/generate_missing_sprites.py` reported `written=0 skipped=182` after placeholders existed.
+- Targeted mechanics smoke confirmed:
+  - a workbench inside a 3x3 enclosed house gives crafting quality;
+  - an `Iron sword` crafted in that house receives boosted durability;
+  - `Iron chestplate`, `Iron boots`, and three `Gold rings` auto-equip;
+  - armor rating reduces incoming damage;
+  - equipped armor durability drops after damage.
+- Short fallback simulation smoke:
+  - ran 8 rounds on a 50x40 world with 4 agents;
+  - replay/logging path did not crash;
+  - all agents stayed alive;
+  - hostile wildlife spawned in the world.
+
+Current read:
+
+This is the first real vertical progression layer. The next QA pass should watch whether Qwen discovers the kiln/glass/bottle/potion path naturally or whether the recipe-priority heuristics need a nudge toward alchemy after agents stabilize food and tools.

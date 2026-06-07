@@ -81,7 +81,7 @@ def station_available(agent: object, world: object, recipe: RecipeDef) -> bool:
     return world.has_station_near(agent.x, agent.y, recipe.station)
 
 
-def craft(agent: object, recipe: RecipeDef) -> Counter[str]:
+def craft(agent: object, recipe: RecipeDef, *, quality_bonus: int = 0) -> Counter[str]:
     consume_ingredients(agent.inventory, recipe)
     outputs = Counter(dict(recipe.outputs))
     if hasattr(agent, "add_items"):
@@ -91,7 +91,10 @@ def craft(agent: object, recipe: RecipeDef) -> Counter[str]:
     for item_id in outputs:
         item = ITEMS[item_id]
         if item.durability:
-            agent.tool_durability[item_id] = max(agent.tool_durability.get(item_id, 0), item.durability)
+            boosted = round(item.durability * (1.0 + quality_bonus * 0.08))
+            agent.tool_durability[item_id] = max(agent.tool_durability.get(item_id, 0), boosted)
+        if item.food > 0 and quality_bonus and hasattr(agent, "food_quality"):
+            agent.food_quality[item_id] = max(agent.food_quality.get(item_id, 0), quality_bonus)
     return outputs
 
 

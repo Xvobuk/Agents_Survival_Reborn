@@ -241,6 +241,7 @@ class Simulation:
                 self._broadcast(agent, speech)
                 agent.chat_cooldown = self.rng.randint(5, 14)
         self.world.advance_wildlife({(agent.x, agent.y) for agent in self.agents if agent.health > 0})
+        self._resolve_hostile_encounters()
         self.logger.log_replay(self._replay_payload())
         self.round_index += 1
         self.chat = self.chat[-CHAT_HISTORY_LIMIT:]
@@ -615,8 +616,18 @@ class Simulation:
             return 2
         if "kiln" in output_ids and not self._has_item_or_world_station(agent, "kiln"):
             return 3
+        if "potion_stand" in output_ids and not self._has_item_or_world_station(agent, "potion_stand"):
+            return 4
         if any(self._is_needed_tool(agent, item_id) for item_id in output_ids):
             return 4 + min(self._tool_need_rank(ITEMS[item_id]) for item_id in output_ids if self._is_needed_tool(agent, item_id))
+        if any("weapon" in ITEMS[item_id].tags and agent.best_tool("weapon", ITEMS[item_id].tool_power) is None for item_id in output_ids):
+            return 5
+        if any(ITEMS[item_id].equip_slot and ITEMS[item_id].armor > 0 for item_id in output_ids):
+            return 6 if agent.armor_rating < 8 else 12
+        if any("potion" in ITEMS[item_id].tags for item_id in output_ids):
+            return 6 if agent.health < 75 or agent.energy < 55 else 11
+        if any("jewelry" in ITEMS[item_id].tags for item_id in output_ids):
+            return 10
         if "wooden_crate" in output_ids and not self._has_item_or_world_station(agent, "wooden_crate"):
             return 3 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
         if {"tent", "bedroll"} & output_ids and any(not self._has_item_or_world_station(agent, item_id) for item_id in output_ids if item_id in {"tent", "bedroll"}):
@@ -950,9 +961,13 @@ class Simulation:
         if not has_output_space(agent, recipe):
             agent.last_action = f"had no inventory space for {recipe.name}"
             return RoundEvent(agent.name, agent.last_action, "craft")
-        outputs = craft(agent, recipe)
+        quality_bonus = self._craft_quality_bonus(agent, recipe)
+        outputs = craft(agent, recipe, quality_bonus=quality_bonus)
+        equipped = agent.auto_equip()
         text = ", ".join(f"{count} {item_name(item)}" for item, count in outputs.items())
-        agent.last_action = f"crafted {text}"
+        quality = f" with house quality +{quality_bonus}" if quality_bonus else ""
+        gear = f"; equipped {', '.join(item_name(item) for item in equipped)}" if equipped else ""
+        agent.last_action = f"crafted {text}{quality}{gear}"
         return RoundEvent(agent.name, agent.last_action, "craft")
 
     def _experiment(self, agent: Agent) -> RoundEvent:
@@ -961,11 +976,47 @@ class Simulation:
             agent.last_action = "tested items but learned nothing"
             return RoundEvent(agent.name, agent.last_action, "experiment")
         agent.known_recipes.add(recipe.recipe_id)
-        outputs = craft(agent, recipe)
+        quality_bonus = self._craft_quality_bonus(agent, recipe)
+        outputs = craft(agent, recipe, quality_bonus=quality_bonus)
+        equipped = agent.auto_equip()
         text = ", ".join(f"{count} {item_name(item)}" for item, count in outputs.items())
-        agent.last_action = f"discovered {recipe.name} and made {text}"
+        quality = f" with house quality +{quality_bonus}" if quality_bonus else ""
+        gear = f"; equipped {', '.join(item_name(item) for item in equipped)}" if equipped else ""
+        agent.last_action = f"discovered {recipe.name} and made {text}{quality}{gear}"
         agent.remember(f"Discovered recipe: {recipe.name}. Hint: {recipe.hint}.")
         return RoundEvent(agent.name, agent.last_action, "experiment")
+
+    def _craft_quality_bonus(self, agent: Agent, recipe: RecipeDef) -> int:
+        if not recipe.station:
+            return 0
+        best = 0
+        for nx, ny in self.world.neighbors(agent.x, agent.y, include_center=True):
+            tile = self.world.tile(nx, ny)
+            if tile.feature != recipe.station:
+                continue
+            bonus, size = self.world.house_rest_bonus(nx, ny)
+            if bonus <= 0:
+                continue
+            best = max(best, min(5, 1 + size // 8))
+        return best
+
+    def _resolve_hostile_encounters(self) -> None:
+        damage_by_feature = {"wolf": 5.0, "bear": 9.0, "snake": 3.5, "boar": 2.5}
+        for agent in self.agents:
+            if agent.health <= 0:
+                continue
+            threats: list[tuple[str, float]] = []
+            for nx, ny in self.world.neighbors(agent.x, agent.y, include_center=True):
+                feature_id = self.world.tile(nx, ny).feature
+                if feature_id in damage_by_feature:
+                    threats.append((feature_id, damage_by_feature[feature_id]))
+            if not threats:
+                continue
+            feature_id, damage = max(threats, key=lambda pair: pair[1])
+            if self.rng.random() > 0.42:
+                continue
+            taken = agent.take_damage(damage, source=FEATURES[feature_id].name.lower())
+            self.round_events.append(RoundEvent(agent.name, f"{FEATURES[feature_id].name} hurt {agent.name} for {taken:.1f} HP", "danger"))
 
     def _place(self, agent: Agent, item_id: str) -> RoundEvent:
         if item_id not in PLACEABLE_ITEMS or agent.inventory.get(item_id, 0) <= 0:
@@ -1530,6 +1581,9 @@ class Simulation:
                 "hunger": round(agent.hunger, 1),
                 "hunger_state": self._hunger_state(agent),
                 "energy": round(agent.energy, 1),
+                "armor": agent.armor_rating,
+                "equipment": dict(agent.equipment),
+                "rings": list(agent.rings),
                 "last_action": agent.last_action,
                 "last_thought": agent.last_thought,
                 "private_memory": list(agent.private_memory),
@@ -1712,6 +1766,9 @@ class Simulation:
                     "health": round(agent.health, 2),
                     "hunger": round(agent.hunger, 2),
                     "energy": round(agent.energy, 2),
+                    "armor": agent.armor_rating,
+                    "equipment": dict(agent.equipment),
+                    "rings": list(agent.rings),
                     "inventory": {item: count for item, count in sorted(agent.inventory.items()) if count > 0},
                     "used_inventory_slots": agent.used_inventory_slots,
                     "inventory_slot_limit": agent.inventory_slot_limit,

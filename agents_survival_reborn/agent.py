@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from .constants import HEARD_MEMORY_LIMIT, INVENTORY_SLOT_LIMIT, PRIVATE_MEMORY_LIMIT
 from .data import AGENT_SPRITES, ITEMS, item_name
 
+EQUIPMENT_SLOTS = ("head", "hands", "chest", "legs", "feet", "neck")
+RING_SLOTS = 10
 
 FORBIDDEN_CHAT_WORDS = {
     "ai",
@@ -73,6 +75,9 @@ class Agent:
     start_facing: tuple[int, int] = (0, 1)
     inventory: Counter[str] = field(default_factory=Counter)
     tool_durability: dict[str, int] = field(default_factory=dict)
+    food_quality: dict[str, int] = field(default_factory=dict)
+    equipment: dict[str, str] = field(default_factory=dict)
+    rings: list[str] = field(default_factory=list)
     known_recipes: set[str] = field(default_factory=set)
     private_memory: deque[str] = field(default_factory=lambda: deque(maxlen=PRIVATE_MEMORY_LIMIT))
     heard_messages: deque[ChatMessage] = field(default_factory=lambda: deque(maxlen=HEARD_MEMORY_LIMIT))
@@ -151,6 +156,54 @@ class Agent:
                 best = candidate
         return best[2] if best else None
 
+    @property
+    def armor_rating(self) -> int:
+        worn = list(self.equipment.values()) + list(self.rings)
+        return sum(ITEMS[item_id].armor for item_id in worn if item_id in ITEMS)
+
+    def take_damage(self, amount: float, *, source: str = "") -> float:
+        reduction = min(0.75, self.armor_rating * 0.045)
+        final = max(0.25, amount * (1.0 - reduction))
+        self.health = max(0.0, self.health - final)
+        self._damage_equipment(max(1, round(amount / 4)))
+        if source:
+            self.last_action = f"was hurt by {source} (-{final:.1f} HP)"
+        return final
+
+    def _damage_equipment(self, wear: int) -> None:
+        for slot, item_id in list(self.equipment.items()):
+            item = ITEMS[item_id]
+            if not item.durability:
+                continue
+            current = self.tool_durability.get(item_id, item.durability) - wear
+            if current <= 0:
+                self.equipment.pop(slot, None)
+                self.tool_durability.pop(item_id, None)
+            else:
+                self.tool_durability[item_id] = current
+
+    def auto_equip(self) -> list[str]:
+        equipped: list[str] = []
+        for item_id, count in sorted(self.inventory.items()):
+            if count <= 0 or item_id not in ITEMS:
+                continue
+            item = ITEMS[item_id]
+            if not item.equip_slot:
+                continue
+            if item.equip_slot == "ring":
+                while self.rings.count(item_id) < count and len(self.rings) < RING_SLOTS:
+                    self.rings.append(item_id)
+                    equipped.append(item_id)
+                continue
+            current = self.equipment.get(item.equip_slot)
+            current_item = ITEMS[current] if current else None
+            current_score = (current_item.armor, current_item.durability, current) if current_item else (-1, -1, "")
+            candidate_score = (item.armor, item.durability, item_id)
+            if candidate_score > current_score:
+                self.equipment[item.equip_slot] = item_id
+                equipped.append(item_id)
+        return equipped
+
     def remember(self, note: str) -> None:
         note = clean_inner_text(note, 180)
         if note:
@@ -211,7 +264,7 @@ class Agent:
             if count <= 0:
                 continue
             item = ITEMS[item_id]
-            food = item.food
+            food = item.food + self.food_quality.get(item_id, 0)
             if food <= 0:
                 continue
             waste = max(0.0, self.hunger + food - target_hunger)
@@ -229,6 +282,12 @@ class Agent:
         if self.inventory[item_id] <= 0:
             del self.inventory[item_id]
         self.hunger = min(100.0, self.hunger + food)
+        if item_id == "healing_potion":
+            self.health = min(100.0, self.health + 28.0 + self.food_quality.get(item_id, 0) * 2)
+        elif item_id == "stamina_potion":
+            self.energy = min(100.0, self.energy + 38.0 + self.food_quality.get(item_id, 0) * 2)
+        elif item_id == "antidote":
+            self.health = min(100.0, self.health + 12.0 + self.food_quality.get(item_id, 0))
         if "raw" in item.tags:
             self.health = max(0.0, self.health - 2.0)
             self.energy = max(0.0, self.energy - 1.0)
