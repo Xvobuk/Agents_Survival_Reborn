@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=WORLD_WIDTH)
     parser.add_argument("--height", type=int, default=WORLD_HEIGHT)
     parser.add_argument("--round-frames", type=int, default=ROUND_FRAMES)
+    parser.add_argument("--max-rounds", type=int, default=0, help="Pause live simulation after this many completed rounds. 0 means unlimited.")
     parser.add_argument("--start-items", default="", help="Comma-separated item=count kit granted to every agent at spawn.")
     parser.add_argument("--asset-wizard", action="store_true", help="Ask for missing sprite files before launch.")
     parser.add_argument("--no-record", action="store_true", help="Deprecated: screen videos are no longer recorded; replay JSONL is always written.")
@@ -144,7 +145,10 @@ def main(argv: list[str] | None = None) -> int:
                 progress = 0.0
             if not paused and pending_round is None:
                 frames_since_round += 1
-                if frames_since_round >= max(1, args.round_frames):
+                if args.max_rounds > 0 and sim.round_index >= args.max_rounds:
+                    paused = True
+                    progress = min(1.0, frames_since_round / max(1, args.round_frames))
+                elif frames_since_round >= max(1, args.round_frames):
                     contexts = sim.prepare_round_contexts()
                     sim.round_thinking = True
                     pending_round = _start_round_worker(sim, contexts)

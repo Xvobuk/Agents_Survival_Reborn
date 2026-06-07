@@ -2209,3 +2209,28 @@ Validation:
 Current read:
 
 This improves burst-rate handling, but it cannot bypass a real exhausted Gemini daily quota. If 429 persists across retries with `--workers 1`, the test should either reduce `--gemini-agents`, wait for quota reset, or switch Gemini agents to a cheaper/faster model if available.
+
+## 2026-06-08 01:28 +03: Live 200-Round Watch Mode
+
+Reason:
+
+The user clarified that the mixed Qwen/Gemini run should be watched in the PyGame window, not only run as a headless QA script.
+
+Implementation:
+
+- Added `--max-rounds` to the live PyGame launcher.
+- When the live simulation reaches the requested round count, it pauses instead of closing the window.
+- Documented a live 2 Qwen + 2 Gemini command with the same starting kit:
+  - 10 pine logs;
+  - 10 stone;
+  - 10 sticks;
+  - 10 copper ore.
+
+Validation:
+
+- `python run.py --help` shows `--max-rounds`.
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+
+Current read:
+
+The user can now watch the agents live and still get a clean stopping point at 200 rounds for inspection.

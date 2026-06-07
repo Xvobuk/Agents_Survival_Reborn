@@ -62,6 +62,16 @@ the rest use the primary provider (`--llama`, `--provider compatible`,
 `--provider openai`, etc.). You can also use `AGENTS_SURVIVAL_GEMINI_API_KEY`,
 `AGENTS_SURVIVAL_GEMINI_MODEL`, and `AGENTS_SURVIVAL_GEMINI_AGENTS`.
 
+Live 2 Qwen + 2 Gemini comparison with a starting kit:
+
+```powershell
+$env:GEMINI_API_KEY="your-gemini-key"
+python run.py --llama --model qwen2.5:7b --agents 4 --gemini-agents 2 --llm-workers 1 --llm-timeout 120 --llm-retries 2 --llm-max-output-tokens 900 --round-frames 30 --max-rounds 200 --start-items pine_log=10,stone=10,stick=10,copper_ore=10
+```
+
+`--max-rounds 200` pauses the live simulation after 200 completed rounds so you
+can inspect the world, agents, inventories, chat, and hover tooltips.
+
 Optional:
 
 ```powershell
