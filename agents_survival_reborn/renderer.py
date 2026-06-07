@@ -105,13 +105,22 @@ class Renderer:
         y = self._text(screen, "Agents Survival Reborn", x, y, self.title, (242, 244, 247), 28)
         state = "THINKING" if getattr(sim, "round_thinking", False) else "PAUSED" if paused else "RUNNING"
         y = self._text(screen, f"Round {sim.round_index} | {state}", x, y, self.font, (184, 202, 213), 22)
+        provider_label = sim.llm.config.provider
+        model_label = sim.llm.config.model
+        gemini_agent_count = getattr(sim.llm.config, "gemini_agent_count", 0)
+        gemini_model = getattr(sim.llm.config, "gemini_model", "gemini")
+        if gemini_agent_count > 0 and sim.llm.config.provider != "gemini":
+            provider_label = f"{sim.llm.config.provider}+gemini"
+            model_label = f"{sim.llm.config.model}+{gemini_model} x{gemini_agent_count}"
         if sim.llm.config.provider in {"compatible", "llama", "ollama"}:
             llm_state = "local" if sim.llm.config.enabled else "offline"
+        elif sim.llm.config.provider == "gemini":
+            llm_state = "gemini" if sim.llm.config.enabled and sim.llm.config.api_key else "no key" if sim.llm.config.enabled else "offline"
         else:
             llm_state = "on" if sim.llm.config.enabled and sim.llm.config.api_key else "no key" if sim.llm.config.enabled else "offline"
         y = self._wrap(
             screen,
-            f"LLM: {llm_state} | {sim.llm.config.provider} | {sim.llm.config.model} | ok {sim.llm.last_successes}/{sim.llm.last_requested} | fallback {sim.llm.last_fallbacks} | {sim.llm.last_duration:.1f}s/{sim.llm.config.timeout:.0f}s",
+            f"LLM: {llm_state} | {provider_label} | {model_label} | ok {sim.llm.last_successes}/{sim.llm.last_requested} | fallback {sim.llm.last_fallbacks} | {sim.llm.last_duration:.1f}s/{sim.llm.config.timeout:.0f}s",
             x,
             y,
             360,

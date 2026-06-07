@@ -43,6 +43,25 @@ $env:OPENAI_API_KEY="sk-..."
 python run.py --llm --model gpt-5
 ```
 
+Gemini API:
+
+```powershell
+$env:GEMINI_API_KEY="your-gemini-key"
+python run.py --llm --provider gemini --model gemini-2.5-flash
+```
+
+Mixed local Qwen/Ollama plus Gemini:
+
+```powershell
+$env:GEMINI_API_KEY="your-gemini-key"
+python run.py --llama --model qwen2.5:7b --agents 8 --gemini-agents 3 --round-frames 60 --llm-workers 4 --llm-timeout 90 --llm-max-output-tokens 900
+```
+
+In mixed mode, the first `--gemini-agents` agents are routed through Gemini and
+the rest use the primary provider (`--llama`, `--provider compatible`,
+`--provider openai`, etc.). You can also use `AGENTS_SURVIVAL_GEMINI_API_KEY`,
+`AGENTS_SURVIVAL_GEMINI_MODEL`, and `AGENTS_SURVIVAL_GEMINI_AGENTS`.
+
 Optional:
 
 ```powershell
@@ -70,6 +89,13 @@ Headless social QA:
 
 ```powershell
 python tools\run_social_qa.py --rounds 8 --agents 3 --cluster --model qwen2.5:7b
+```
+
+Mixed Qwen/Gemini social QA:
+
+```powershell
+$env:GEMINI_API_KEY="your-gemini-key"
+python tools\run_social_qa.py --rounds 4 --agents 4 --cluster --model qwen2.5:7b --gemini-agents 2 --workers 4 --timeout 90
 ```
 
 This runs without the PyGame window, clusters agents for chat testing, and
@@ -111,6 +137,11 @@ trees, stone, sand/coast, animals, and clay/ore when the generated map permits i
     JSON schema output.
   - `compatible`: Chat Completions endpoint for LM Studio, llama.cpp servers,
     and similar local APIs.
+  - `gemini` / `google`: Gemini `generateContent`, requires `GEMINI_API_KEY`
+    or `AGENTS_SURVIVAL_GEMINI_API_KEY`.
+  - mixed Gemini mode: set `--gemini-agents N` while using another primary
+    provider, so only N agents use Gemini and the others keep using the
+    existing provider.
 
 ## Sprites
 

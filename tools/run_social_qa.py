@@ -32,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--max-output-tokens", type=int, default=900)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--gemini-agents", type=int, default=0)
+    parser.add_argument("--gemini-model", default="gemini-2.5-flash")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--cluster", action="store_true", help="Move agents into one small starting group.")
     parser.add_argument("--mixed-biome", action="store_true", help="Cluster agents near varied progression terrain for tech-path QA.")
@@ -50,6 +52,8 @@ def main() -> int:
         timeout=args.timeout,
         workers=max(1, args.workers),
         max_output_tokens=args.max_output_tokens,
+        gemini_agent_count=max(0, args.gemini_agents),
+        gemini_model=args.gemini_model,
     )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, seed=args.seed, llm_config=llm_config)
     if args.mixed_biome:

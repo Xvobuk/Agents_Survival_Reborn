@@ -28,9 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm", action="store_true", help="Use real generative-model agents.")
     parser.add_argument("--llama", action="store_true", help="Use local Ollama with native structured JSON output.")
     parser.add_argument("--offline", action="store_true", help="Run deterministic fallback decisions without API calls.")
-    parser.add_argument("--provider", default=None, help="openai, ollama, or compatible.")
+    parser.add_argument("--provider", default=None, help="openai, ollama, compatible, or gemini.")
     parser.add_argument("--base-url", default=None, help="API base URL. Ollama default: http://localhost:11434")
     parser.add_argument("--model", default=None, help="Model name, e.g. gpt-5 or llama3.1.")
+    parser.add_argument("--gemini-agents", type=int, default=None, help="Number of agents routed through Gemini while the rest use the primary provider.")
+    parser.add_argument("--gemini-model", default=None, help="Gemini model for mixed mode, e.g. gemini-2.5-flash.")
     parser.add_argument("--llm-timeout", type=float, default=None, help="Seconds to wait for one model call.")
     parser.add_argument("--llm-workers", type=int, default=None, help="Concurrent model calls. Local Ollama usually likes 1.")
     parser.add_argument("--llm-max-output-tokens", type=int, default=None, help="Token budget for one model decision JSON.")
@@ -61,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         base_url = base_url or "http://localhost:11434"
         model = model or "llama3.1"
         force_enabled = True
+    if args.gemini_agents and args.gemini_agents > 0:
+        force_enabled = True
     llm_config = LLMConfig.from_env(
         force_enabled=force_enabled,
         force_disabled=args.offline,
@@ -71,6 +75,22 @@ def main(argv: list[str] | None = None) -> int:
         workers=args.llm_workers,
         max_output_tokens=args.llm_max_output_tokens,
     )
+    if args.gemini_agents is not None or args.gemini_model:
+        llm_config = LLMConfig(
+            enabled=llm_config.enabled,
+            model=llm_config.model,
+            api_key=llm_config.api_key,
+            provider=llm_config.provider,
+            base_url=llm_config.base_url,
+            timeout=llm_config.timeout,
+            workers=llm_config.workers,
+            reasoning_effort=llm_config.reasoning_effort,
+            max_output_tokens=llm_config.max_output_tokens,
+            gemini_agent_count=max(0, args.gemini_agents if args.gemini_agents is not None else llm_config.gemini_agent_count),
+            gemini_model=args.gemini_model or llm_config.gemini_model,
+            gemini_api_key=llm_config.gemini_api_key,
+            gemini_base_url=llm_config.gemini_base_url,
+        )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, llm_config=llm_config)
     camera = Camera()
     selected = 0

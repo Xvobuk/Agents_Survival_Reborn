@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .constants import DOCS_DIR
@@ -64,6 +64,7 @@ ACTION_VALUES = {"move", "interact", "craft", "experiment", "place", "eat", "tal
 MAP_HALLUCINATION_KEYS = {"name", "description", "dimensions", "tiles", "layout", "terrain"}
 OLLAMA_PROVIDERS = {"ollama"}
 COMPATIBLE_PROVIDERS = {"compatible", "llama"}
+GEMINI_PROVIDERS = {"gemini", "google"}
 LOCAL_PROVIDERS = OLLAMA_PROVIDERS | COMPATIBLE_PROVIDERS
 
 
@@ -93,6 +94,10 @@ class LLMConfig:
     workers: int = 6
     reasoning_effort: str = "low"
     max_output_tokens: int = 500
+    gemini_agent_count: int = 0
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     @classmethod
     def from_env(
@@ -112,27 +117,54 @@ class LLMConfig:
             enabled = True
         if force_disabled:
             enabled = False
-        resolved_provider = provider or os.getenv("AGENTS_SURVIVAL_PROVIDER") or "openai"
+        resolved_provider = (provider or os.getenv("AGENTS_SURVIVAL_PROVIDER") or "openai").strip().lower()
         if resolved_provider in OLLAMA_PROVIDERS:
             default_base_url = "http://localhost:11434"
         elif resolved_provider in COMPATIBLE_PROVIDERS:
             default_base_url = "http://localhost:11434/v1"
+        elif resolved_provider in GEMINI_PROVIDERS:
+            default_base_url = "https://generativelanguage.googleapis.com/v1beta"
         else:
             default_base_url = "https://api.openai.com/v1"
-        default_model = "llama3.1" if resolved_provider in LOCAL_PROVIDERS else "gpt-5"
-        default_workers = "1" if resolved_provider in LOCAL_PROVIDERS else "6"
-        default_timeout = "90" if resolved_provider in LOCAL_PROVIDERS else "35"
-        default_max_output = "900" if resolved_provider in LOCAL_PROVIDERS else "500"
+        if resolved_provider in LOCAL_PROVIDERS:
+            default_model = "llama3.1"
+            default_workers = "1"
+            default_timeout = "90"
+            default_max_output = "900"
+        elif resolved_provider in GEMINI_PROVIDERS:
+            default_model = os.getenv("AGENTS_SURVIVAL_GEMINI_MODEL", "gemini-2.5-flash")
+            default_workers = "4"
+            default_timeout = "45"
+            default_max_output = "900"
+        else:
+            default_model = "gpt-5"
+            default_workers = "6"
+            default_timeout = "35"
+            default_max_output = "500"
         if resolved_provider in LOCAL_PROVIDERS:
             api_key = os.getenv("AGENTS_SURVIVAL_API_KEY") or ""
+        elif resolved_provider in GEMINI_PROVIDERS:
+            api_key = os.getenv("AGENTS_SURVIVAL_API_KEY") or os.getenv("AGENTS_SURVIVAL_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
         else:
             api_key = os.getenv("AGENTS_SURVIVAL_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
-        resolved_base_url = (base_url or os.getenv("AGENTS_SURVIVAL_BASE_URL") or os.getenv("OPENAI_BASE_URL") or default_base_url).rstrip("/")
+        gemini_env_key = os.getenv("AGENTS_SURVIVAL_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+        gemini_api_key = gemini_env_key or (api_key if resolved_provider in GEMINI_PROVIDERS else "")
+        gemini_agent_count = max(0, int(os.getenv("AGENTS_SURVIVAL_GEMINI_AGENTS", "0")))
+        if resolved_provider in GEMINI_PROVIDERS:
+            env_model = os.getenv("AGENTS_SURVIVAL_MODEL") or os.getenv("AGENTS_SURVIVAL_GEMINI_MODEL")
+            env_base_url = os.getenv("AGENTS_SURVIVAL_BASE_URL") or os.getenv("AGENTS_SURVIVAL_GEMINI_BASE_URL")
+        elif resolved_provider in LOCAL_PROVIDERS:
+            env_model = os.getenv("AGENTS_SURVIVAL_MODEL")
+            env_base_url = os.getenv("AGENTS_SURVIVAL_BASE_URL")
+        else:
+            env_model = os.getenv("AGENTS_SURVIVAL_MODEL") or os.getenv("OPENAI_MODEL")
+            env_base_url = os.getenv("AGENTS_SURVIVAL_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+        resolved_base_url = (base_url or env_base_url or default_base_url).rstrip("/")
         if resolved_provider in OLLAMA_PROVIDERS and resolved_base_url.endswith("/v1"):
             resolved_base_url = resolved_base_url[:-3].rstrip("/")
         return cls(
             enabled=enabled,
-            model=model or os.getenv("AGENTS_SURVIVAL_MODEL") or os.getenv("OPENAI_MODEL") or default_model,
+            model=model or env_model or default_model,
             api_key=api_key,
             provider=resolved_provider,
             base_url=resolved_base_url,
@@ -140,6 +172,10 @@ class LLMConfig:
             workers=max(1, workers or int(os.getenv("AGENTS_SURVIVAL_LLM_WORKERS", default_workers))),
             reasoning_effort=os.getenv("AGENTS_SURVIVAL_REASONING", "low"),
             max_output_tokens=max_output_tokens or int(os.getenv("AGENTS_SURVIVAL_MAX_OUTPUT_TOKENS", default_max_output)),
+            gemini_agent_count=gemini_agent_count,
+            gemini_model=os.getenv("AGENTS_SURVIVAL_GEMINI_MODEL", "gemini-2.5-flash"),
+            gemini_api_key=gemini_api_key,
+            gemini_base_url=os.getenv("AGENTS_SURVIVAL_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/"),
         )
 
 
@@ -169,9 +205,14 @@ class LLMDirector:
             self.last_failures = len(contexts)
             self.last_error = "missing OpenAI API key"
             return {}
+        if self.config.provider in GEMINI_PROVIDERS and not self.config.api_key:
+            self.last_failures = len(contexts)
+            self.last_error = "missing Gemini API key"
+            return {}
         decisions: dict[int, Decision] = {}
         with ThreadPoolExecutor(max_workers=self.config.workers) as pool:
-            futures = {pool.submit(self._decide_one, context): agent_id for agent_id, context in contexts.items()}
+            route = self._configs_by_agent(contexts)
+            futures = {pool.submit(self._decide_one, context, route[agent_id]): agent_id for agent_id, context in contexts.items()}
             for future in as_completed(futures):
                 agent_id = futures[future]
                 try:
@@ -183,16 +224,37 @@ class LLMDirector:
         self.last_duration = time.perf_counter() - started
         return decisions
 
-    def _decide_one(self, context: dict[str, Any]) -> Decision:
-        if self.config.provider in OLLAMA_PROVIDERS:
-            return self._decide_ollama_native(context)
-        if self.config.provider in COMPATIBLE_PROVIDERS:
-            return self._decide_chat_compatible(context)
-        return self._decide_openai_responses(context)
+    def _configs_by_agent(self, contexts: dict[int, dict[str, Any]]) -> dict[int, LLMConfig]:
+        route = {agent_id: self.config for agent_id in contexts}
+        if self.config.provider in GEMINI_PROVIDERS or self.config.gemini_agent_count <= 0:
+            return route
+        gemini_config = self._gemini_config()
+        for agent_id in sorted(contexts)[: self.config.gemini_agent_count]:
+            route[agent_id] = gemini_config
+        return route
 
-    def _decide_openai_responses(self, context: dict[str, Any]) -> Decision:
+    def _gemini_config(self) -> LLMConfig:
+        return replace(
+            self.config,
+            provider="gemini",
+            model=self.config.gemini_model,
+            api_key=self.config.gemini_api_key,
+            base_url=self.config.gemini_base_url,
+        )
+
+    def _decide_one(self, context: dict[str, Any], config: LLMConfig | None = None) -> Decision:
+        config = config or self.config
+        if config.provider in OLLAMA_PROVIDERS:
+            return self._decide_ollama_native(context, config)
+        if config.provider in COMPATIBLE_PROVIDERS:
+            return self._decide_chat_compatible(context, config)
+        if config.provider in GEMINI_PROVIDERS:
+            return self._decide_gemini(context, config)
+        return self._decide_openai_responses(context, config)
+
+    def _decide_openai_responses(self, context: dict[str, Any], config: LLMConfig) -> Decision:
         payload = {
-            "model": self.config.model,
+            "model": config.model,
             "input": [
                 {"role": "developer", "content": [{"type": "input_text", "text": self._developer_prompt()}]},
                 {"role": "user", "content": [{"type": "input_text", "text": json.dumps(context, ensure_ascii=True)}]},
@@ -205,24 +267,24 @@ class LLMDirector:
                     "strict": True,
                 }
             },
-            "max_output_tokens": self.config.max_output_tokens,
+            "max_output_tokens": config.max_output_tokens,
         }
-        if self.config.reasoning_effort.lower() not in {"none", "off", ""}:
-            payload["reasoning"] = {"effort": self.config.reasoning_effort}
+        if config.reasoning_effort.lower() not in {"none", "off", ""}:
+            payload["reasoning"] = {"effort": config.reasoning_effort}
         request = urllib.request.Request(
-            f"{self.config.base_url}/responses",
+            f"{config.base_url}/responses",
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+        with urllib.request.urlopen(request, timeout=config.timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
         text = self._extract_text(data)
         return self._parse_decision_text(text)
 
-    def _decide_ollama_native(self, context: dict[str, Any]) -> Decision:
+    def _decide_ollama_native(self, context: dict[str, Any], config: LLMConfig) -> Decision:
         payload: dict[str, Any] = {
-            "model": self.config.model,
+            "model": config.model,
             "messages": [
                 {"role": "system", "content": self._local_system_prompt()},
                 {"role": "user", "content": self._local_user_prompt(context)},
@@ -231,47 +293,65 @@ class LLMDirector:
             "stream": False,
             "options": {
                 "temperature": 0.1,
-                "num_predict": self.config.max_output_tokens,
+                "num_predict": config.max_output_tokens,
             },
         }
         headers = {"Content-Type": "application/json"}
-        request = self._json_request(f"{self.config.base_url}/api/chat", payload, headers)
+        request = self._json_request(f"{config.base_url}/api/chat", payload, headers)
         try:
-            data = self._send_json(request)
+            data = self._send_json(request, config.timeout)
         except urllib.error.HTTPError as exc:
             if exc.code not in {400, 422}:
                 raise
             payload["format"] = "json"
-            request = self._json_request(f"{self.config.base_url}/api/chat", payload, headers)
-            data = self._send_json(request)
+            request = self._json_request(f"{config.base_url}/api/chat", payload, headers)
+            data = self._send_json(request, config.timeout)
         text = data["message"]["content"]
         return self._parse_decision_text(text)
 
-    def _decide_chat_compatible(self, context: dict[str, Any]) -> Decision:
+    def _decide_chat_compatible(self, context: dict[str, Any], config: LLMConfig) -> Decision:
         payload = {
-            "model": self.config.model,
+            "model": config.model,
             "messages": [
                 {"role": "system", "content": self._local_system_prompt()},
                 {"role": "user", "content": self._local_user_prompt(context)},
             ],
             "temperature": 0.25,
-            "max_tokens": self.config.max_output_tokens,
+            "max_tokens": config.max_output_tokens,
             "response_format": {"type": "json_object"},
             "stream": False,
         }
         headers = {"Content-Type": "application/json"}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
-        request = self._json_request(f"{self.config.base_url}/chat/completions", payload, headers)
+        if config.api_key:
+            headers["Authorization"] = f"Bearer {config.api_key}"
+        request = self._json_request(f"{config.base_url}/chat/completions", payload, headers)
         try:
-            data = self._send_json(request)
+            data = self._send_json(request, config.timeout)
         except urllib.error.HTTPError as exc:
             if exc.code not in {400, 422}:
                 raise
             payload.pop("response_format", None)
-            request = self._json_request(f"{self.config.base_url}/chat/completions", payload, headers)
-            data = self._send_json(request)
+            request = self._json_request(f"{config.base_url}/chat/completions", payload, headers)
+            data = self._send_json(request, config.timeout)
         text = data["choices"][0]["message"]["content"]
+        return self._parse_decision_text(text)
+
+    def _decide_gemini(self, context: dict[str, Any], config: LLMConfig) -> Decision:
+        if not config.api_key:
+            raise RuntimeError("missing Gemini API key")
+        payload = {
+            "systemInstruction": {"parts": [{"text": self._local_system_prompt()}]},
+            "contents": [{"role": "user", "parts": [{"text": self._local_user_prompt(context)}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": config.max_output_tokens,
+                "responseMimeType": "application/json",
+            },
+        }
+        headers = {"Content-Type": "application/json", "x-goog-api-key": config.api_key}
+        request = self._json_request(f"{config.base_url}/models/{config.model}:generateContent", payload, headers)
+        data = self._send_json(request, config.timeout)
+        text = self._extract_gemini_text(data)
         return self._parse_decision_text(text)
 
     def _local_system_prompt(self) -> str:
@@ -319,8 +399,8 @@ class LLMDirector:
             method="POST",
         )
 
-    def _send_json(self, request: urllib.request.Request) -> dict[str, Any]:
-        with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+    def _send_json(self, request: urllib.request.Request, timeout: float | None = None) -> dict[str, Any]:
+        with urllib.request.urlopen(request, timeout=timeout or self.config.timeout) as response:
             return json.loads(response.read().decode("utf-8"))
 
     @staticmethod
@@ -334,6 +414,22 @@ class LLMDirector:
                     chunks.append(content["text"])
         if not chunks:
             raise RuntimeError("Responses API returned no text output")
+        return "".join(chunks)
+
+    @staticmethod
+    def _extract_gemini_text(data: dict[str, Any]) -> str:
+        chunks: list[str] = []
+        for candidate in data.get("candidates", []):
+            content = candidate.get("content", {})
+            for part in content.get("parts", []):
+                text = part.get("text")
+                if isinstance(text, str):
+                    chunks.append(text)
+        if not chunks:
+            reason = ""
+            if data.get("promptFeedback"):
+                reason = f": {data['promptFeedback']}"
+            raise RuntimeError(f"Gemini returned no text{reason}")
         return "".join(chunks)
 
     @staticmethod

@@ -2057,3 +2057,52 @@ Validation:
 Current read:
 
 The visible chat should now be quieter but less fake. The next useful step is not just more filtering, but stronger positive social scaffolding: agents need concrete shared projects and remembered obligations so they have something human to talk about besides immediate survival chores.
+
+## 2026-06-08 00:55 +03: Gemini Provider And Mixed-Model Agents
+
+Reason:
+
+The user wanted to add Gemini-backed agents alongside the existing local Qwen/Ollama agents, while keeping the current game systems intact.
+
+Implementation:
+
+- Added Gemini as a first-class LLM provider:
+  - provider aliases: `gemini` and `google`;
+  - default model: `gemini-2.5-flash`;
+  - default endpoint: Gemini `generateContent`;
+  - API key from `GEMINI_API_KEY` or `AGENTS_SURVIVAL_GEMINI_API_KEY`.
+- Implemented Gemini REST calls with the existing standard-library HTTP stack:
+  - no new Python package dependency;
+  - uses `systemInstruction`, `contents`, `generationConfig`, and `responseMimeType: application/json`;
+  - parses returned Gemini candidate text through the existing JSON repair/decision parser.
+- Added mixed-provider routing:
+  - `--provider gemini` can route every agent through Gemini;
+  - `--gemini-agents N` routes the first N agents through Gemini while remaining agents use the primary provider, such as `--llama --model qwen2.5:7b`.
+- Added CLI flags:
+  - `--gemini-agents`;
+  - `--gemini-model`.
+- Updated headless QA tooling with the same mixed Gemini options.
+- Updated HUD provider display:
+  - pure Gemini mode shows Gemini;
+  - mixed mode shows the primary provider plus Gemini and the Gemini agent count.
+- Kept secrets out of source/docs:
+  - docs show placeholder key examples only;
+  - no provided key was written to tracked files.
+- Updated README with Gemini and mixed Qwen/Gemini launch examples.
+
+Validation:
+
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- Config/routing test passed:
+  - provider names are normalized case-insensitively;
+  - pure Gemini config resolves Gemini defaults;
+  - mixed Qwen/Gemini routes the first N agents to Gemini and the rest to Ollama.
+- Gemini response extraction test passed with a mocked Gemini response.
+- CLI help prints the new Gemini flags successfully.
+- Offline social QA passed for 5 rounds / 4 agents.
+- Renderer compatibility smoke passed with a replay-style minimal LLM config, so older replay playback does not break on missing Gemini config fields.
+- Secret scan confirmed the provided key prefix is not present in the repository.
+
+Current read:
+
+Gemini is now wired in as a hosted model option without replacing local Qwen. The remaining live check is to set `GEMINI_API_KEY` in the user's shell and run a short mixed QA/game session against the real API.
