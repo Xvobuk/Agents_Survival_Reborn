@@ -352,6 +352,8 @@ class Simulation:
         recent = " ".join(list(agent.recent_actions)[-5:]).lower()
         repeated_ground = recent.count("foraged ground cover") >= 2
         needs_progress_material = needs_stick_for_tool or needs_axe_material or needs_pickaxe_material or needs_campfire_stone or needs_workbench_wood or needs_logs_with_axe
+        if needs_logs_with_axe:
+            return True
         return has_basics and (needs_stick_for_tool or has_sticks or repeated_ground) and needs_progress_material
 
     def _best_visible_progress_target(self, agent: Agent) -> tuple[int, int, str] | None:
@@ -361,7 +363,8 @@ class Simulation:
         has_axe = bool(agent.best_tool("axe", 1))
         has_tool_head = agent.inventory.get("pebble", 0) >= 2 or agent.inventory.get("stone", 0) >= 2 or agent.inventory.get("flint", 0) >= 1
         needs_stick = has_tool_head and agent.inventory.get("cordage", 0) >= 1 and agent.inventory.get("stick", 0) <= 0
-        needs_rock = stone_like < 5 or (not agent.best_tool("pickaxe", 1) and not agent.inventory.get("flint", 0))
+        needs_logs_with_axe = has_axe and log_count <= 0 and agent.inventory.get("plank", 0) < 4
+        needs_rock = not needs_logs_with_axe and (stone_like < 5 or (not agent.best_tool("pickaxe", 1) and not agent.inventory.get("flint", 0)))
         needs_wood = (has_axe and log_count <= 0 and agent.inventory.get("plank", 0) < 4) or (not has_axe and log_count <= 0)
         for dy in range(-SIGHT_RADIUS, SIGHT_RADIUS + 1):
             for dx in range(-SIGHT_RADIUS, SIGHT_RADIUS + 1):
@@ -376,10 +379,10 @@ class Simulation:
                 label = ""
                 priority = 99
                 if feature and ("stone" in feature.tags or "rock" in feature.tags or "ore" in feature.tags):
-                    priority = 6 if needs_stick else 0
+                    priority = 8 if needs_logs_with_axe else 6 if needs_stick else 0
                     label = feature.name
                 elif feature and "tree" in feature.tags:
-                    priority = 1 if needs_stick else 1 if needs_wood and not needs_rock else 5
+                    priority = 0 if needs_logs_with_axe else 1 if needs_stick else 1 if needs_wood and not needs_rock else 5
                     label = feature.name
                 elif "rock" in terrain.tags or "hill" in terrain.tags:
                     priority = 7 if needs_stick else 2 if needs_rock else 6
@@ -455,6 +458,10 @@ class Simulation:
             )
             agent.last_intent = adjusted.intent
             return adjusted, reason
+        progress_move = self._progress_exploration_move(agent, decision)
+        if progress_move:
+            agent.last_intent = progress_move.intent
+            return progress_move, reason
         option = self._best_immediate_interaction(agent)
         if option:
             target = str(option["target"]).lower()

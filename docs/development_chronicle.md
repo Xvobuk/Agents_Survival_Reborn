@@ -1185,3 +1185,52 @@ Validation:
 Current read:
 
 The survival tech chain now has a clearer next step: once agents chop logs, replacement logic should push them toward discovering and crafting planks before hoarding extra cordage. The next QA target is whether a longer run reaches `Workbench` and then actually places it.
+
+## 2026-06-07 12:54 +03: Post-Axe Tree Targeting Fix
+
+Reason:
+
+A longer Qwen run after the logs-to-planks fix tested whether agents could repeatedly reach the axe/log/plank/workbench chain.
+
+Observed QA session:
+
+```text
+logs/session_20260607_124709
+```
+
+Good signs:
+
+- 18 Qwen rounds completed with 0 LLM fallbacks.
+- No accepted chat lines leaked.
+- Replay inventory frames had no 15-slot violations.
+- Mira discovered and crafted `Stone axe`.
+- Aiden discovered `Wooden pickaxe`.
+
+Problems:
+
+- Mira crafted `Stone axe` but then kept digging `Clay hills` instead of moving toward trees for logs.
+- Root cause: `_needs_progress_exploration` still required early basic-material conditions even when the agent already had an axe and needed logs.
+- Secondary cause: `_best_visible_progress_target` still allowed nearby rock/stone features to outrank trees even after the axe milestone.
+
+Implementation:
+
+- If an agent has an axe, no logs, and fewer than 4 planks, progress exploration now turns on immediately.
+- Progress-target scoring now treats this post-axe/no-log state as a wood milestone:
+  - tree features become top priority;
+  - rock/stone/ore features are demoted until logs are secured.
+- `_productive_replacement` already calls progress exploration before local immediate interactions; this now correctly redirects invalid/vague actions away from clay loops and toward trees.
+
+Validation:
+
+- Targeted snapshot reproduced the bug:
+  - agent with `Stone axe`, no logs, and nearby clay/stone/tree previously chose a nearby `Stone outcrop`.
+- After the fix:
+  - `_needs_progress_exploration` returned `True`;
+  - `_best_visible_progress_target` returned `Birch tree`;
+  - productive replacement returned a move toward `Birch tree`.
+- `compileall` passed.
+- Targeted `py_compile` passed for `simulation.py`.
+
+Current read:
+
+The axe milestone now has a stronger mechanical pull toward logs. The next long QA pass should check whether this reliably produces `Birch log`/`Oak log`, then `Rough planks`, then `Workbench` placement.
