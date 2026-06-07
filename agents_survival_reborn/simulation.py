@@ -198,8 +198,11 @@ class Simulation:
                     speech_blocked_reason = f"chat cooldown {agent.chat_cooldown}"
                 else:
                     speech_blocked_reason = "not useful now"
-            if decision.intent:
-                agent.last_intent = decision.intent if from_llm else f"fallback: {decision.intent}"
+            clean_intent = clean_inner_text(decision.intent, 160)
+            if clean_intent:
+                agent.last_intent = clean_intent if from_llm else f"fallback: {clean_intent}"
+            elif from_llm:
+                agent.last_intent = decision.action
             decision, adjustment_reason = self._adjust_low_value_decision(agent, decision)
             if decision.action == "talk" and not speech_allowed:
                 decision = Decision("wait", private_memory=decision.private_memory, intent="skip blocked or nonessential chat", thought=decision.thought)

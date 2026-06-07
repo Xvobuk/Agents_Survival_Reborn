@@ -318,6 +318,15 @@ def clean_inner_text(text: str, limit: int = 260) -> str:
     text = re.sub(r"\s+", " ", text.strip())
     if not text:
         return ""
+    if any(ord(char) > 127 for char in text):
+        return ""
+    if text.count("?") >= max(3, len(text) // 3):
+        return ""
+    lowered = text.lower()
+    if re.fullmatch(r"i (am|'m) (moving|walking|going) (one step )?(to the )?(left|right|up|down|north|south|east|west)\.?", lowered):
+        return ""
+    if re.fullmatch(r"(move|moving|walk|walking|go|going) (one step )?(to the )?(left|right|up|down|north|south|east|west)\.?", lowered):
+        return ""
     return text[:limit]
 
 

@@ -2106,3 +2106,34 @@ Validation:
 Current read:
 
 Gemini is now wired in as a hosted model option without replacing local Qwen. The remaining live check is to set `GEMINI_API_KEY` in the user's shell and run a short mixed QA/game session against the real API.
+
+## 2026-06-08 01:02 +03: Cleaner Intent And Thought Logs
+
+Reason:
+
+The latest autonomous QA log showed two spectator-log quality issues:
+
+- one LLM intent arrived as mojibake/question-mark garbage;
+- one thought was pure movement narration: "I am walking to the left."
+
+Implementation:
+
+- Strengthened `clean_inner_text()` for thoughts, intents, and memory notes:
+  - drops non-ASCII text, which catches malformed local-model encoding output;
+  - drops question-mark garbage strings caused by encoding fallback;
+  - drops simple mechanical movement narration such as "I am walking to the left."
+- Sanitized LLM `intent` before assigning it to the agent HUD/log state.
+- If an LLM intent is invalid after cleaning, the agent falls back to the chosen action name instead of preserving bad text.
+
+Validation:
+
+- Targeted cleaner test passed for:
+  - question-mark garbage;
+  - "I am walking to the left.";
+  - "Walking to the east.";
+  - a normal cave-related thought.
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+
+Current read:
+
+This does not make agents smarter by itself, but it keeps the observer-facing mind log from being poisoned by malformed local-model output. That matters now that thoughts are part of the actual viewing experience.
