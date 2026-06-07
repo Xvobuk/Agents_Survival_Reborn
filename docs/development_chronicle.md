@@ -1664,3 +1664,50 @@ Validation:
 Current read:
 
 The building loop now has both mechanics and real art. The next visual pass should watch a live or replayed settlement build and decide whether the full-height wall sprites read better than the compact wall icons in the world layer.
+
+## 2026-06-07 20:47 +03: Imported Wildlife And Remaining Placeholder Atlas
+
+Reason:
+
+The user supplied a new ChatGPT atlas for the remaining placeholder sprites. The atlas was visually strong, but ChatGPT did not follow the requested 6x6 manifest exactly:
+
+- it left several requested item/UI sprites out;
+- it shifted later sprites into a looser layout;
+- it used transparency correctly, but individual sprites and shadows crossed the implied grid boundaries.
+
+Implementation:
+
+- Added `tools/import_missing_sprite_atlas.py`:
+  - detects visible alpha components globally instead of trusting the 6x6 grid;
+  - sorts components top-to-bottom and left-to-right;
+  - maps only visually present, useful sprites;
+  - skips ambiguous duplicates and unclear tools;
+  - writes a contact-sheet preview for QA.
+- Imported 26 real sprites:
+  - wildlife/features: `feature_salmon_school`, `feature_eel`, `feature_rabbit`, `feature_deer`, `feature_fox`, `feature_boar`, `feature_frog`, `feature_duck`, `feature_gull`, `feature_turtle`;
+  - placeables/features: `feature_tent`, `feature_bedroll`, `feature_wooden_crate`;
+  - items: `item_copper_ingot`, `item_iron_ingot`, `item_gold_ingot`, `item_plank`, `item_wild_seed`, `item_tent`, `item_stone_knife`, `item_fish_net`, `item_copper_pickaxe`, `item_iron_pickaxe`, `item_diamond_pickaxe`;
+  - UI: `ui_selected`, `ui_inventory`.
+- Kept generated debug output local:
+  - `assets/generated/missing_sprite_atlas_20260607.png`;
+  - `assets/generated/missing_sprite_import_contact.png`.
+
+Validation:
+
+- Visual contact sheet showed clean isolated sprites without neighbor slivers after switching from grid slicing to global component detection.
+- Placeholder scan dropped from 36 tiny placeholder files to 10.
+- Remaining placeholders are:
+  - `item_cactus_flesh`;
+  - `item_cactus_spine`;
+  - `item_crab_meat`;
+  - `item_cooked_fish`;
+  - `item_cooked_crab`;
+  - `item_fried_egg`;
+  - `item_resin`;
+  - `item_wooden_pickaxe`;
+  - `item_fishing_rod`;
+  - `ui_chat`.
+
+Current read:
+
+The world should now look much more alive: most animal placeholders are gone, and common early crafting/storage visuals are no longer abstract boxes. One final small atlas focused only on the 10 remaining sprites should finish the placeholder cleanup.
