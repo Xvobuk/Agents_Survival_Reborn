@@ -1,0 +1,14 @@
+[project]
+name = "agents-survival-reborn"
+version = "0.1.0"
+description = "A PyGame survival sandbox driven by independent generative AI agents."
+requires-python = ">=3.11"
+dependencies = [
+    "pygame>=2.5",
+    "numpy>=1.26",
+    "imageio>=2.34",
+    "imageio-ffmpeg>=0.4",
+]
+
+[tool.ruff]
+line-length = 110

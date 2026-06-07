@@ -1,0 +1,44 @@
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+ASSET_DIR = ROOT_DIR / "assets"
+SPRITE_DIR = ASSET_DIR / "sprites"
+GENERATED_DIR = ASSET_DIR / "generated"
+DOCS_DIR = ROOT_DIR / "docs"
+VIDEO_DIR = ROOT_DIR / "gameplay_videos"
+LOG_DIR = ROOT_DIR / "logs"
+
+SCREEN_WIDTH = 1440
+SCREEN_HEIGHT = 900
+HUD_WIDTH = 390
+FPS = 30
+
+TILE_SIZE = 32
+WORLD_WIDTH = 150
+WORLD_HEIGHT = 100
+AGENT_COUNT = 10
+ROUND_FRAMES = 24
+
+SIGHT_RADIUS = 8
+CHAT_RADIUS = 10
+CHAT_HISTORY_LIMIT = 180
+HEARD_MEMORY_LIMIT = 16
+PRIVATE_MEMORY_LIMIT = 16
+INVENTORY_SLOT_LIMIT = 15
+
+DEFAULT_SEED = 20260605
+RECORD_SIZE = (1280, 720)
+RECORDING_ENABLED = True
+
+DIRECTIONS = [
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (-1, 0),
+    (1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+]
+
+CENTER_AND_NEIGHBORS = [(0, 0), *DIRECTIONS]

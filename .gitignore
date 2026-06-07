@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+gameplay_videos/*.mp4
+assets/generated/
+docs/missing_sprites.md
+docs/last_llm_response.txt
+logs/

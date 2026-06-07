@@ -1,0 +1,1130 @@
+# Agents Survival Reborn Development Chronicle
+
+This file is the long-form development memory for the project. Every meaningful future change, QA pass, bug fix, mechanic expansion, and design decision should be appended here so the project has a readable history instead of scattered chat fragments.
+
+## Purpose
+
+Agents Survival Reborn is a PyGame survival sandbox where several AI-controlled player-characters enter the same tile world, believe the others are real players, gather resources, discover hidden recipes, craft tools and stations, talk through local chat, and try to survive and progress. The spectator can move around the map, inspect players, read the full chat, and record gameplay.
+
+The long-term direction is not a scripted toy. The goal is a living sandbox:
+
+- agents make decisions through a local generative model when available;
+- agents remember enough context to behave like continuing people;
+- chat is occasional, useful, and human-like rather than status spam;
+- LLM hallucinations can become new mechanics when they are good ideas;
+- bad hallucinations are filtered before they poison memory or chat;
+- the world contains resources, biomes, wildlife, crafting, building, eating, cooking, and visible progression;
+- placeholder art is acceptable until real sprites are supplied.
+
+## Initial Rebuild
+
+The project was rebuilt in `F:\python_projects\agents_survival_reborn` as a fresh Python/PyGame project. The earlier prototype was considered too chaotic and too visually poor, so the new version was structured around data-driven terrain, features, items, recipes, agents, rendering, and LLM decisions.
+
+Core systems created:
+
+- `run.py` entrypoint.
+- `agents_survival_reborn/data.py` for terrain, features, items, recipes, and sprite specs.
+- `agents_survival_reborn/world.py` for procedural world generation and tile interactions.
+- `agents_survival_reborn/agent.py` for personas, inventory, memory, needs, and tools.
+- `agents_survival_reborn/simulation.py` for turn processing, LLM context, action validation, chat, logging, and fallback behavior.
+- `agents_survival_reborn/llm.py` for OpenAI-compatible and Ollama/local model calls.
+- `agents_survival_reborn/renderer.py` for PyGame world/HUD drawing.
+- `agents_survival_reborn/assets.py` for sprite loading, missing sprite reports, asset wizard, and placeholders.
+- `agents_survival_reborn/recorder.py` for gameplay video recording.
+- `agents_survival_reborn/journal.py` for JSONL logs.
+
+## World And Biomes
+
+The world is a 2D tile grid with procedural terrain. Current terrain includes:
+
+- deep water;
+- shallow water;
+- coast;
+- sand;
+- grassland;
+- meadow;
+- forest floor;
+- rocky cliffs;
+- hills;
+- clay hills;
+- swamp;
+- snowfield;
+- tundra;
+- jungle;
+- mushroom grove;
+- badlands.
+
+The generator uses layered noise for height, moisture, and temperature, then adjusts coasts near water. Feature placement is terrain-aware.
+
+Original feature categories included:
+
+- desert/coast resources: cactus, crab, reeds, sand/coast loot;
+- water resources: fish school, kelp, reef;
+- plants: tall grass, flower patch, berry bush, herbs, mushrooms;
+- trees: birch, oak, pine, fruit tree;
+- rock and mining: stone outcrop, cave mouth, coal/copper/iron/gold/diamond veins, clay patch;
+- snowdrift;
+- stations: workbench, campfire, kiln.
+
+Later, more animals and fish were added:
+
+- rabbit;
+- deer;
+- fox;
+- boar;
+- frog;
+- duck;
+- gull;
+- turtle;
+- salmon school;
+- eel.
+
+Wildlife is still represented as tile features, not a full ECS/entity layer. This was intentional as a compact first step: it keeps interaction, rendering, loot, and sprite handling simple while making the world visibly alive.
+
+## Wildlife Movement
+
+Wildlife movement was added in `World.advance_wildlife`.
+
+Behavior:
+
+- runs after all agents finish their round;
+- only moves features tagged as `animal` or `fish`;
+- never moves onto an occupied agent tile;
+- never moves onto another feature;
+- respects terrain constraints;
+- has per-species movement probabilities.
+
+Movement rules:
+
+- crabs move on sand/coast;
+- fish schools, salmon schools, and eels move in water;
+- rabbits move on grass, meadow, forest floor, and tundra;
+- deer, foxes, and boars move through forests, jungles, meadows, grass, and mushroom groves;
+- frogs and ducks prefer wet zones, swamp, coast, and shallow water;
+- gulls and turtles stay near coast/sand.
+
+This made crabs stop behaving like decorative rocks and start wandering on beaches.
+
+## Agents And Personas
+
+Agents are distinct persona-driven player-characters. Current personas include:
+
+- Aiden, builder: ex-carpenter, wants the strongest base and every station.
+- Mira, miner: prospector, wants metal tools before everyone else.
+- Noah, provider: coastal fisher, wants food security.
+- Ivy, explorer: mapmaker, wants rare biomes, caves, and routes.
+- Leo, forager: herbalist, wants plant uses and early crafting.
+- Zara, solo/competitive: wants to out-progress others.
+- Owen, trader: wants trade and recipe knowledge.
+- Nia, minmaxer: wants efficient tech progression.
+- Caleb, cook: wants cooked food and camp stability.
+- Sera, tinkerer: wants utility recipes and clever tool chains.
+
+Earlier issues:
+
+- agents talked constantly;
+- agents often said coordinates for no reason;
+- agents narrated every move;
+- agents repeated the same plan, especially Aiden obsessing over pickaxes/campfires;
+- agents did not seem to hear or remember chat well;
+- agents invented fake players, professions, map data, and recipes.
+
+Fixes added:
+
+- stronger per-persona prompts;
+- recent speech, thoughts, actions, heard chat, and private memory passed into context;
+- fresh nearby chat separated from older heard chat;
+- fresh questions identified and prioritized;
+- speech can accompany useful non-talk actions;
+- talking is converted to interact when there is a useful nearby resource;
+- useless/vague movement can be converted to nearby interaction;
+- invalid craft/place can be replaced with known craft, experiment, or immediate interaction.
+
+## Local LLM Integration
+
+The project supports local models through Ollama. The user has `qwen2.5:7b` available.
+
+The usual command for full game mode:
+
+```powershell
+cd F:\python_projects\agents_survival_reborn
+.\.venv\Scripts\python.exe run.py --llama --model qwen2.5:7b --agents 2 --round-frames 60 --llm-workers 1 --llm-timeout 120 --llm-max-output-tokens 900 --no-record
+```
+
+The usual QA command:
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_social_qa.py --rounds 8 --agents 3 --cluster --model qwen2.5:7b --provider ollama --base-url http://localhost:11434 --timeout 120 --workers 1 --max-output-tokens 900
+```
+
+Ollama note:
+
+- If `ollama serve` says port `127.0.0.1:11434` is already in use, that usually means the Ollama service is already running.
+- `ollama list` confirmed `qwen2.5:7b`.
+
+The user realized the agents were genuinely thinking and acting through a local generative model on the machine, which became an important design direction.
+
+## LLM Output Repair And Filtering
+
+Qwen often returned unwanted JSON-like world-generation blocks instead of decisions. The LLM layer was hardened:
+
+- strict decision schema;
+- expected keys: `action`, `dx`, `dy`, `target_dx`, `target_dy`, `recipe_id`, `place_item`, `speech`, `private_memory`, `intent`, `thought`;
+- repair/extraction from imperfect JSON;
+- fallback behavior if the LLM times out or returns malformed output;
+- local model prompts that explicitly say the input is game state, not a request to generate a map.
+
+The system now logs LLM success, fallback count, duration, and last errors in the HUD.
+
+## Chat, Thoughts, And Logs
+
+A run logger was added. Each session writes logs under:
+
+```text
+logs/session_YYYYMMDD_HHMMSS/
+```
+
+Important files:
+
+- `chat.jsonl`: public chat messages.
+- `thoughts.jsonl`: per-agent thought, intent, action, speech filtering result, private memory delta, fresh question context, and recent heard chat.
+- `turns.jsonl`: applied action results, inventory, positions, thoughts.
+
+This was added because the user wanted to inspect not only what agents say, but also what they think, and whether the thinking is human-like.
+
+Chat rules evolved heavily:
+
+- no status updates like "I move left" or "I'll gather wood";
+- no repeated goal spam;
+- no coordinate spam unless useful;
+- no AI/bot/prompt/model/schema/NPC mentions;
+- no fake roles/players;
+- no non-ASCII chat;
+- no empty greeting filler;
+- no low-value weather/view filler;
+- no generic "Need any help?" without concrete help;
+- direct questions should be answered directly, not with a similar question back;
+- a reply must address the actual question;
+- speech is allowed only if someone nearby can hear it, except emergencies;
+- recent global chat similarity blocks repeated ideas.
+
+## Private Memory Validation
+
+Private memory is filtered because bad memory poisons later decisions.
+
+Blocked memory examples:
+
+- fake `Player1`;
+- fake `nearby player`;
+- invented `Woodcutter (Xiao)` or `Miner (Feng)`;
+- fake villagers, blacksmiths, cabins;
+- unsupported items such as rope, cloth, wool;
+- claims about placed/crafted/found/discovered items unless the event actually happened;
+- future intentions such as "I will move left later";
+- fake coordinates unrelated to current movement/place actions.
+
+Allowed memory examples:
+
+- real recipe discoveries;
+- real nearby resource observations;
+- actual heard chat;
+- actual inventory facts;
+- completed recent actions.
+
+## Social QA Tool
+
+`tools/run_social_qa.py` was added for headless testing. It can cluster agents near each other, run rounds without opening PyGame, use local Ollama, and summarize:
+
+- chat lines;
+- speakers;
+- blocked speech reasons;
+- action counts;
+- last chat;
+- last thoughts.
+
+This tool became the main autonomous QA loop.
+
+## Sprites And Atlas Extraction
+
+The user generated a sprite atlas with ChatGPT Image. It contained terrain tiles, plants, rocks, ores, tools, foods, stations, agents, hearts, stamina-like icons, and many additional items.
+
+A sprite extraction pipeline was created earlier. The first pass had magenta background remnants because ChatGPT varied the exact pink color. The alpha cleanup was improved so near-magenta outlines are removed more robustly.
+
+The asset system:
+
+- loads sprites from `assets/sprites`;
+- uses exact filenames from `sprite_specs`;
+- falls back to generated placeholders;
+- writes `docs/missing_sprites.md`.
+
+The user requested no new sprite work for some later mechanics, so new objects such as tent/animals use placeholders until sprites are supplied.
+
+## Crafting And Items
+
+Recipes are hidden from agents until discovered. Agents can learn through experimentation when ingredients and station availability match undiscovered recipes.
+
+Current recipe categories:
+
+- handcraft basics: Cordage, sticks, planks;
+- early tools: stone knife, axe, shovel, pickaxe, spear, fishing rod;
+- stations: workbench, campfire, kiln;
+- fishing: fish net;
+- cooking: cooked fish, cooked crab, cooked meat, fried egg, camp bread, charcoal;
+- light: torch;
+- smelting: copper/iron ingots;
+- building and utility: wooden shield, crate, door, bedroll, sack, bow, arrows;
+- advanced pickaxes: copper, iron, diamond;
+- shelter: tent.
+
+Important exact recipe added from user request:
+
+```text
+Tent: 3 Pine log + 10 Stick -> 1 Tent @ Workbench
+```
+
+Campfire already existed:
+
+```text
+Campfire: 5 Stone + 3 Stick + 1 any fiber -> 1 Campfire @ handcraft
+```
+
+## Placeable Items
+
+A general `PLACEABLE_ITEMS` set was added instead of hardcoding only workbench/campfire/kiln.
+
+Current placeable items:
+
+- workbench;
+- campfire;
+- kiln;
+- tent;
+- wooden crate;
+- wooden door;
+- bedroll.
+
+Changes:
+
+- `world.place_station` now accepts all placeables.
+- `simulation._place` validates against `PLACEABLE_ITEMS`.
+- LLM `place_item` enum includes all placeables.
+- context exposes `placeable_inventory`.
+- immediate actions show `place` when an item can be placed on the current tile.
+
+Tent interaction:
+
+- placing creates a `tent` feature;
+- interacting with it restores energy and costs a little hunger.
+
+Bedroll interaction:
+
+- restores less energy than tent;
+- costs a little hunger.
+
+## Food And Hunger
+
+Food originally existed only as item `food` values plus a late auto-eat threshold. Agents could walk around hungry while carrying food, which looked wrong.
+
+Food mechanics were improved:
+
+- `Agent.eat_best_food` now chooses food smarter;
+- it tries not to waste large food when a smaller item is enough;
+- cooked food gets preference;
+- raw food is allowed but applies a small health/energy penalty;
+- cooked food gives a small health/energy benefit;
+- hunger restoration is shown in action text;
+- auto-eating triggers earlier when hunger is low and food is available;
+- fallback/scripted mode eats at a higher threshold;
+- `food_inventory` is included in the LLM context;
+- `hunger_state` is included in the LLM context;
+- `eat` appears in `immediate_actions` when useful;
+- LLM prompt says to eat below 60 hunger unless something more urgent is happening;
+- LLM prompt says to cook raw fish/meat/crab/eggs at a campfire when possible.
+
+HUD improvements:
+
+- old single text line `HP Hunger Energy` was replaced with icon rows and bars;
+- uses `ui_health`, `ui_hunger`, `ui_energy`;
+- if sprites are missing, placeholders are used;
+- current project has `ui_health.png`, `ui_hunger.png`, `ui_energy.png`, and `ui_unknown.png`.
+
+Validation performed:
+
+- cooked fish chosen before raw meat;
+- raw meat works but applies penalty;
+- auto-eat interrupts routine movement when hungry;
+- LLM context includes `food_inventory`;
+- `eat` appears in immediate actions;
+- headless PyGame render test succeeded.
+
+## Survival Needs
+
+Agents currently track:
+
+- health;
+- hunger;
+- energy.
+
+Need ticking:
+
+- hunger slowly decreases every turn;
+- energy slowly regenerates passively;
+- starvation damages health;
+- high hunger slowly heals.
+
+Movement costs energy. Rest features such as tent and bedroll restore energy.
+
+This is still early. Possible future directions:
+
+- thirst;
+- temperature;
+- sleep cycles;
+- injury;
+- sickness from raw food;
+- morale;
+- camp warmth from fire;
+- better rest actions.
+
+## HUD And Spectator Experience
+
+The spectator can:
+
+- move around the world;
+- select/follow agents;
+- read full chat;
+- inspect current agent status, origin, goal, intent, thought, last action, and inventory;
+- see minimap;
+- see LLM status and errors;
+- record gameplay video.
+
+The HUD has been gradually improved:
+
+- thought display added;
+- LLM status and fallback counters added;
+- chat display preserved;
+- icon-based stat bars added for health, hunger, and energy.
+
+## Recording
+
+Gameplay video recording exists and saves to `gameplay_videos`. Earlier recording was configured for 30 FPS. No recent changes were made to recording during the food/wildlife/placeable work.
+
+## Known Current Weaknesses
+
+These are not necessarily bugs, but useful future targets.
+
+### Wildlife Is Still Feature-Based
+
+Animals and fish are tile features. This works for movement and interaction but limits:
+
+- multiple entities on one tile;
+- animal health state separate from tile HP;
+- pathfinding;
+- fleeing/chasing;
+- reproduction;
+- predator behavior;
+- smooth independent animation.
+
+A future entity layer would be cleaner if wildlife becomes central.
+
+### Combat/Hunting Is Minimal
+
+Animals can be interacted with and loot drops, but there is no rich combat. Some animals require tools such as spear or bow. There is no fleeing, danger, wound system, or animal aggression yet.
+
+### Cooking Is Recipe-Based But Agent Understanding Needs QA
+
+Cooked recipes exist and LLM is prompted to cook raw food when possible. More QA is needed to ensure agents actually place campfires and cook instead of eating raw food too often.
+
+### Craft Discovery Is Still Hard
+
+Recipes are hidden, as desired, but local models can get stuck repeating guesses. The system partially solves this with `experiment` and productive replacements. More recipe hints, world affordances, and social learning could help.
+
+### Storage Is Cosmetic
+
+Wooden crates can be placed, but they do not yet store items. This is an obvious next mechanic.
+
+### Doors Are Cosmetic
+
+Wooden doors can be placed, but there is not yet wall/base collision or real door behavior.
+
+### Tent And Bedroll Are Simple
+
+They restore energy but do not create a saved camp, sleep cycle, ownership, warmth, or safety.
+
+## Autonomous QA Automation
+
+The heartbeat automation `agent-social-qa-continuation` was updated and renamed to:
+
+```text
+Agents Survival Reborn autonomous dev QA
+```
+
+The automation now asks future runs to:
+
+- continue autonomous development QA for `F:\python_projects\agents_survival_reborn`;
+- run or inspect headless local-Ollama simulations with `qwen2.5:7b` when useful;
+- inspect latest `logs/session_*/chat.jsonl`, `thoughts.jsonl`, and `turns.jsonl`;
+- evaluate agent behavior, chat realism, memory continuity, survival progress, crafting progression, placeable item usage, hunger/eating decisions, cooking behavior, wildlife movement, fishing, mobs/animals, HUD regressions, and sandbox playability;
+- make focused fixes when clear;
+- verify with `compileall`, targeted checks, or smoke tests;
+- clean `__pycache__`;
+- append every meaningful change/test/finding to this file before reporting concise progress.
+
+## Verification Commands Commonly Used
+
+Compile:
+
+```powershell
+.\.venv\Scripts\python.exe -m compileall agents_survival_reborn tools\run_social_qa.py
+```
+
+Social QA:
+
+```powershell
+.\.venv\Scripts\python.exe tools\run_social_qa.py --rounds 6 --agents 3 --cluster --model qwen2.5:7b --provider ollama --base-url http://localhost:11434 --timeout 120 --workers 1 --max-output-tokens 900
+```
+
+Clean Python caches:
+
+```powershell
+$project = Resolve-Path 'F:\python_projects\agents_survival_reborn'
+Get-ChildItem -Path $project -Recurse -Directory -Filter '__pycache__' | ForEach-Object {
+    $target = Resolve-Path -LiteralPath $_.FullName
+    if ($target.Path.StartsWith($project.Path, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Remove-Item -LiteralPath $target.Path -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+```
+
+## 2026-06-07: Chronicle Created And Automation Updated
+
+Created this chronicle file at:
+
+```text
+F:\python_projects\agents_survival_reborn\docs\development_chronicle.md
+```
+
+Updated the heartbeat automation so future autonomous QA explicitly includes:
+
+- survival mechanics;
+- food and hunger;
+- cooking behavior;
+- wildlife/mobs/fish;
+- placeable item use;
+- crafting progression;
+- HUD regressions;
+- maintaining this chronicle.
+
+This entry is the baseline. Future changes should be appended below with date, files touched, reason, implementation notes, and verification.
+
+## 2026-06-07: Anti-Grind Progression Breaker
+
+Reason:
+
+The first autonomous development QA pass after the food, wildlife, and placeable work showed a clear sandbox progression problem. A fresh Qwen run completed successfully with no LLM fallbacks, but the agents spent nearly every turn repeatedly foraging meadow/grass ground. They accumulated enough `Grass fiber` and `Stick` to discover or craft useful recipes, yet their vague `move` decisions were repeatedly converted into more `interact` actions. This made them look busy but not meaningfully progressive.
+
+Observed QA session:
+
+```text
+logs/session_20260607_002037
+```
+
+Symptoms:
+
+- 8 rounds produced 22 `interact` actions and only 2 `move` actions.
+- 0 `experiment` actions.
+- 0 `craft` actions.
+- Aiden reached 17 `Grass fiber` and 5 `Stick` while still foraging.
+- Noah and Mira also kept gathering routine ground resources.
+- Chat stayed silent because generated speech was mostly correctly blocked status narration.
+- Thoughts sometimes contained model-meta phrasing such as "The player wants..." or artificial social intent.
+
+Implementation:
+
+- Added `_should_break_gather_loop` in `simulation.py`.
+- If an agent has repeated routine gathering in recent actions and known/discoverable recipes exist, a routine `move`, `interact`, or `talk` decision can be converted into progression via `_productive_replacement`.
+- The breaker also triggers when an agent has enough `Grass fiber` to discover `Cordage` but has not learned it yet.
+- Added turn guidance telling the LLM not to repeat ground-foraging loops when craft/experiment progression is available.
+- Added a local LLM prompt sentence: progression beats another handful of grass.
+- Improved thought polishing so spectator thoughts that look like model-meta/user-control text are replaced with in-character useful thoughts.
+- Expanded private memory filtering so future-plan notes like "I should explore later" are not stored as factual memory.
+
+Validation:
+
+Controlled test:
+
+- Agent with 9 `Grass fiber` and repeated `foraged ground cover` history had a vague `move` replaced with `experiment`.
+- The resulting event discovered `Cordage` and made 1 `Cordage`.
+- After discovery, repeated gathering was replaced with `craft cordage_from_fiber`.
+- Future private memory line `I should explore later.` was correctly rejected.
+
+Fresh Qwen QA session:
+
+```text
+logs/session_20260607_002529
+```
+
+Result:
+
+- 8 rounds produced 13 `interact`, 4 `move`, 2 `experiment`, and 5 `craft` actions.
+- Agents discovered and crafted `Cordage`.
+- Mira interacted with a rabbit and got `Raw meat`, confirming wildlife remains useful in the resource loop.
+- Status-update speech was still blocked.
+
+Remaining issue:
+
+The agents can now overproduce `Cordage` if that is the only known craftable recipe. This is acceptable for the moment because Cordage is a core early material, but future crafting priority should account for stockpiles and next-step recipe goals.
+
+## 2026-06-07: Craft Priority And Phantom Place Plan Guard
+
+Reason:
+
+The next heartbeat QA pass focused on the remaining issue from the anti-grind work: agents could still overproduce `Cordage` because the simulation selected the first known craftable recipe without judging stockpiles or strategic value. A fresh Qwen run also revealed a second issue: an agent could spend movement turns planning to place a `Wooden crate` even though it did not own one and did not know/craft it yet.
+
+Observed QA session:
+
+```text
+logs/session_20260607_004203
+```
+
+Good signs:
+
+- LLM calls were stable: 8 rounds, all ok, no fallback.
+- The anti-grind breaker still worked.
+- Agents discovered `Cordage`.
+- Agents crafted at least one `Cordage`.
+- Noah asked a real crafting question instead of only narrating movement.
+
+Problems:
+
+- Craft selection needed a notion of stockpile caps and strategic priority.
+- Noah repeatedly generated "place wooden crate" plans without having a crate.
+
+Implementation:
+
+- Added `_best_known_craft` in `simulation.py`.
+- Added `_craft_priority` to rank known craftable recipes.
+- Priorities now prefer cooked food when relevant, missing stations, missing tools, useful placeables, then bounded intermediate materials.
+- Added soft caps:
+  - `Cordage` is useful until 4 in inventory.
+  - `Stick` is useful until 10.
+  - `Plank` is useful until 12.
+  - `Arrow` is useful until 16.
+- Updated `_productive_replacement` and fallback decisions to use `_best_known_craft` instead of blindly taking the first recipe.
+- Added `_looks_like_invalid_place_plan`.
+- If an agent attempts to move/interact/talk while its intent/speech/thought/private memory clearly says it will place a specific placeable item it does not own, the decision is redirected into productive replacement.
+
+Validation:
+
+Controlled craft priority test:
+
+- With 9 `Grass fiber` and 0 `Cordage`, best craft is `cordage_from_fiber`.
+- With 9 `Grass fiber` and 4 `Cordage`, no more Cordage craft is selected.
+- With 4 `Cordage`, 2 `Stone`, and 1 `Stick`, `stone_axe` beats more Cordage.
+
+Controlled phantom-place test:
+
+- A move decision saying "place a wooden crate" without a crate in inventory was replaced with `experiment`.
+
+Verification:
+
+- `compileall` passed.
+
+Remaining issue:
+
+Placeable/base-building goals are still mostly aspirational until agents reliably get logs, planks, workbench, and storage recipes. Next useful direction is either better tree/tool progression or a richer station/base loop.
+
+## 2026-06-07: Wooden Pickaxe And Better Discovery Priority
+
+Reason:
+
+A follow-up Qwen QA pass showed that the model repeatedly fantasized about crafting a `Wooden pickaxe`, especially while trying to progress toward campfires, crates, or mining. Previously this was only an invalid/hallucinated plan. Since a weak early pickaxe is a sensible sandbox item, the idea was promoted into a real mechanic instead of merely being filtered.
+
+Observed QA session:
+
+```text
+logs/session_20260607_005028
+```
+
+Findings:
+
+- The earlier craft-priority fix reduced blind Cordage overproduction but did not solve early tool progression.
+- A status line `Heading north to check the flower patch.` slipped into chat because the status filter covered `heading toward`, but not bare compass directions.
+- Agents continued to mention wooden pickaxes, which did not exist.
+- Recipe discovery still selected the first discoverable recipe in data order, not the most strategically useful hidden recipe.
+
+Implementation:
+
+- Added `Wooden pickaxe` item in `data.py`.
+- Recipe:
+
+```text
+Wooden pickaxe: 3 Stick + 1 Cordage + 1 Flint -> 1 Wooden pickaxe @ handcraft
+```
+
+- Tool stats:
+  - tags: `pickaxe`, `mine`;
+  - power: 1;
+  - durability: 32.
+- Added bare-direction status filtering for phrases such as `Heading north`.
+- Added `_best_discoverable` in `simulation.py`.
+- Experimenting now chooses hidden recipes through the same priority model used for known craft selection.
+- Tool discovery priority now prefers missing pickaxes before less progression-critical tools.
+- Fallback decisions now use prioritized discovery too.
+
+Validation:
+
+Controlled test:
+
+- With `3 Stick`, `1 Cordage`, and `1 Flint`, `_best_discoverable` selects `wooden_pickaxe`.
+- `_experiment` discovers `Wooden pickaxe` and crafts it immediately.
+- The resulting tool is available through `best_tool("pickaxe", 1)`.
+- `Heading north to check the flower patch.` is now classified as status-update speech.
+
+Fresh Qwen smoke session:
+
+```text
+logs/session_20260607_005459
+```
+
+Result:
+
+- 6 rounds completed with no fallbacks.
+- Progression through `experiment` and `craft` still works.
+- The short run did not reach Flint and therefore did not naturally craft a wooden pickaxe, but the controlled mechanic path is verified.
+
+Remaining issue:
+
+Early progression still depends on finding Flint or Stone. Agents often stay in meadow starts, so the next useful improvement may be stronger exploration pressure toward rock/sand/forest targets once basic fiber resources are stocked.
+
+## 2026-06-07: Progress Exploration Toward Stone, Sand, And Trees
+
+Reason:
+
+After adding `Wooden pickaxe`, the next QA pass showed that agents could still remain in meadow starts for too long. They progressed through `Cordage`, but once the basic fiber loop was mostly exhausted they needed stronger pressure toward Flint, Stone, logs, trees, sand, rock, or forest targets.
+
+Observed QA session:
+
+```text
+logs/session_20260607_010211
+```
+
+Findings:
+
+- Agents continued to open and craft `Cordage`.
+- Bare-direction status speech such as `Heading north...` was correctly blocked after the previous filter update.
+- Agents still did not reliably leave meadow starts in short runs.
+- One private-memory hallucination slipped through: `Collected some wood from a nearby birch tree` after a meadow foraging action.
+
+Implementation:
+
+- Added `_progress_exploration_move` in `simulation.py`.
+- If a vague movement decision happens after the agent has enough basic fiber/Cordage/sticks but lacks progress materials, the movement can be redirected toward the best visible progression target.
+- Visible progression targets are ranked:
+  - stone/rock/ore feature;
+  - tree feature;
+  - rock/hill terrain;
+  - sand/dry terrain;
+  - forest terrain.
+- Added `_needs_progress_exploration` and `_best_visible_progress_target`.
+- Added `_sign` helper for one-step movement toward a target.
+- Tightened private-memory validation:
+  - `collected`, `harvested`, `foraged`, and `gathered` claims must match the actual event verb;
+  - tree claims are rejected if the event did not involve a tree.
+
+Validation:
+
+Controlled test:
+
+- Agent with `4 Cordage`, `3 Stick`, and meadow-foraging history redirected a vague move toward a visible `Stone outcrop`.
+- Fake memory `Collected some wood from a nearby birch tree.` after meadow foraging was rejected.
+
+Qwen smoke:
+
+- `logs/session_20260607_010211` completed 6 rounds, no fallbacks.
+- Actions still included `experiment` and `craft`; the new progression redirection is ready for longer runs where agents have exhausted immediate recipe progress.
+
+Remaining issue:
+
+The short clustered QA starts may not expose enough visible rock/sand/forest targets. A future QA tool option could spawn agents near mixed-biome boundaries or run longer travel tests specifically for tech progression.
+
+## 2026-06-07: Mixed-Biome QA Mode And Stricter LLM Sanitization
+
+Reason:
+
+The previous entry identified that the clustered QA start often placed agents in a meadow-heavy pocket. That was useful for chat and early fiber testing, but weak for tech-path QA. A richer test start was needed so the local model could see trees, stone, coast/sand, clay, animals, and ore-adjacent terrain in the same viewing radius.
+
+Implementation:
+
+- Added `--mixed-biome` to `tools/run_social_qa.py`.
+- `--mixed-biome` clusters agents near the highest-scoring passable location found on the generated map.
+- The score rewards nearby useful terrain and feature tags:
+  - grass;
+  - forest;
+  - rock;
+  - sand;
+  - hill;
+  - clay;
+  - coast;
+  - water;
+  - tree;
+  - stone/rock/ore;
+  - food;
+  - animal;
+  - fish.
+- Added README documentation for `--mixed-biome`.
+
+Validation:
+
+Offline mixed-biome run:
+
+```text
+logs/session_20260607_011118
+```
+
+The chosen start had nearby:
+
+- clay hills;
+- coast;
+- grass;
+- meadow;
+- birch tree;
+- clay patch;
+- copper vein;
+- flower patch;
+- rabbit;
+- stone outcrop.
+
+Qwen mixed-biome smoke run:
+
+```text
+logs/session_20260607_011128
+```
+
+Good signs:
+
+- Qwen completed 6 rounds without fallbacks.
+- Agents performed movement, interaction, experiment, and craft.
+- `progress exploration` activated and redirected agents toward a `Stone outcrop`.
+
+New issues found:
+
+- The model produced non-English/non-ASCII thoughts and private memory in one turn.
+- A fake memory about a found `Wooden crate` slipped through after ordinary foraging.
+- Status speech about cutting/chopping wood needed better filtering.
+
+Follow-up implementation:
+
+- Non-ASCII private memory is now rejected.
+- Non-ASCII thoughts are replaced with a fallback in-character thought.
+- Private memory mentioning a crate is rejected unless the actual event involved a crate.
+- Status filtering now catches `chop`, `chopping`, `cut`, and `cutting`.
+- Status filtering now catches `before I can place`.
+
+Verification:
+
+- `I will cut some wood to make a wooden crate.` is now status-update speech.
+- `I'll need to chop down a birch tree first before I can place the wooden crate.` is status-update speech.
+- Non-ASCII private memory is rejected.
+- Non-ASCII thought text falls back to an English in-character line.
+- `compileall` passed.
+
+Remaining issue:
+
+Mixed-biome QA exposed a strong obsession with crates/campfires before agents have the required placeable item. The current guard prevents bad actions, but a better future step is to teach the context to show missing prerequisites for desired placeables more explicitly.
+
+## 2026-06-07: Mixed-Biome Long QA And Chat Meta Cleanup
+
+Reason:
+
+A longer mixed-biome Qwen run was used to test whether agents could progress beyond meadow foraging into movement toward stone and clay. The run showed good mechanical progress but exposed several accepted chat lines that were still not human-like player communication.
+
+Observed QA session:
+
+```text
+logs/session_20260607_012029
+```
+
+Good signs:
+
+- 10 rounds completed with no LLM fallbacks.
+- Actions included movement, interaction, experiment, and craft.
+- Progress exploration repeatedly redirected Noah toward a `Stone outcrop`.
+- Mira dug `Clay lump` from clay hills.
+- Agents continued to discover and craft `Cordage`.
+
+Problems:
+
+- Accepted chat included status/meta lines:
+  - `Let's move east a bit and check if there are any resources nearby.`
+  - `I'll plant a birch tree and place a bedroll nearby.`
+  - `You are already in the center of the map. What would you like to do?`
+- Private memory accepted a future-plan note: `I am moving to the left...`
+
+Implementation:
+
+- Expanded status speech filters to catch:
+  - `let's move`;
+  - `let's start`;
+  - `plant` and `planting`;
+  - `what would you like to do`;
+  - `center of the map`.
+- Added a pre-question meta check in `_is_status_update_speech` so `What would you like to do?` is blocked even though it contains a question mark.
+- Expanded private-memory future-plan rejection to catch `I am...` and `I'm...` notes.
+
+Validation:
+
+Targeted tests confirmed:
+
+- `Let's move east a bit and check if there are any resources nearby.` is blocked as status speech.
+- `I'll plant a birch tree and place a bedroll nearby.` is blocked as status speech.
+- `You are already in the center of the map. What would you like to do?` is blocked as status/meta speech.
+- `I am moving to the left...` is rejected from private memory.
+- `compileall` passed.
+
+Remaining issue:
+
+Agents still generate these weak lines internally, even though filters now block them. Future prompt/context work should reduce the generation rate, not only filter the output.
+
+## 2026-06-07 01:46 +03: Result-Claim Filter And Place-Action Context
+
+Reason:
+
+The post-filter mixed-biome Qwen run showed that no hard failures occurred, but two bad chat lines still escaped:
+
+- `I've placed a bedroll next to the birch tree. Now I can rest here.`
+- `I'll need some wood to make a campfire.`
+
+The first line was especially harmful because the real action was an experiment, not a placement. The agent was narrating an imagined completed action.
+
+Observed QA sessions:
+
+```text
+logs/session_20260607_013413
+logs/session_20260607_013808
+logs/session_20260607_014204
+logs/session_20260607_014502
+```
+
+Implementation:
+
+- Added a post-action speech truth check in `Simulation._speech_result_block_reason`.
+- Blocked speech that claims a completed `placed`, `set up`, `built`, `crafted`, `made`, `found`, `got`, or `caught` action when the actual `RoundEvent` result does not support it.
+- Added a specific guard for `Now I can rest here` unless the current turn actually placed something.
+- Expanded status speech filters for lines such as `I'll need some wood to make a campfire`.
+- Added the bad bedroll and campfire lines to blocked speech examples in the game context.
+- Strengthened the LLM developer prompt so agents must not claim placement/crafting/discovery unless `recent_actions` proves it happened.
+- Made `available_actions` dynamic: `place` is now omitted when the agent has no placeable item in inventory.
+- Added `forbidden_actions` to the per-agent context, currently listing `place` when the action is invalid this turn.
+- Added explicit turn guidance: use `place` only when it appears in `available_actions` and the exact item appears in `placeable_inventory`.
+- Strengthened the LLM prompt: action must be one of `available_actions`, and anything in `forbidden_actions` must not be chosen.
+- Polished fallback thoughts so non-English or meta thoughts no longer become lines like `I am focusing on this next step: move`.
+- Expanded meta-thought cleanup for phrases such as `player is already` and `desired location`.
+
+Validation:
+
+- Targeted checks confirmed:
+  - `I'll need some wood to make a campfire.` is treated as status speech.
+  - `I've placed a bedroll...` is blocked after an unrelated experiment result.
+  - The same bedroll line is allowed by the result-claim check when the event result is actually `placed Bedroll`.
+  - A starting agent with no placeable inventory no longer receives `place` in `available_actions`.
+  - Meta thought `No immediate action needed as the player is already in the desired location.` is replaced with a natural movement thought.
+- `logs/session_20260607_013808` after the result-claim filter had zero accepted chat lines; bad placement/status narration was blocked.
+- `logs/session_20260607_014204` after dynamic `available_actions` still showed Qwen sometimes narrating imagined placement in speech, but none reached chat.
+- `logs/session_20260607_014502` after `forbidden_actions` had no requested `place` action in the first four rounds, though one imagined placement line still appeared inside blocked speech.
+
+Current read:
+
+The visible chat is now much safer: the agents are not broadcasting fake completed actions or constant campfire/bedroll chatter. The model still sometimes generates action narration internally, but the simulator catches it and redirects the actual move into useful interact/experiment behavior. The next worthwhile improvement is not another broad filter; it is probably better progression pressure toward stone/log acquisition so agents can actually craft the campfire/workbench chain they keep wanting.
+
+## 2026-06-07 02:03 +03: Early Stone And Tool Progression Bridge
+
+Reason:
+
+The next QA pass showed that agents were safer in chat but still struggled to turn early junk into actual progression. They wanted campfires, workbenches, doors, and crates, but the stone/wood chain was too brittle:
+
+- `Pebble` was available early but mostly behaved like a dead-end item.
+- Trees required an axe for real logs.
+- Stone outcrops required a pickaxe for real stone.
+- Agents near clay could keep digging clay forever because it was the nearest easy interaction.
+- Mira reached `2 Pebble + Cordage` but lacked a `Stick`, so she could not make the new early axe bridge.
+
+Observed QA sessions:
+
+```text
+logs/session_20260607_015039
+logs/session_20260607_015517
+logs/session_20260607_020006
+```
+
+Implementation:
+
+- Added `stone_from_pebbles` recipe:
+  - `3 Pebble -> 1 Stone`
+  - In-game name: `Knapped stone`.
+- Added `pebble_axe` recipe:
+  - `2 Pebble + 1 Stick + 1 Cordage -> 1 Stone axe`
+  - This gives agents a realistic way to reach tree chopping before they have full stone supply.
+- Updated craft priority so `Knapped stone` is useful while the agent has fewer than 5 `Stone`.
+- Expanded progression exploration:
+  - It no longer stops just because the agent found one progress material.
+  - It now considers whether the agent still needs material for axe, pickaxe, campfire, workbench, logs, or a missing stick handle.
+  - If the agent has a tool head plus `Cordage` but no `Stick`, grass/forest/tree targets become high priority.
+- Changed adjacent progress targets:
+  - If the best progress target is already adjacent, the agent now `interact`s with it instead of trying to move onto or through it.
+  - This fixes nearby trees/rock/forest targets that are useful but not always enterable.
+- Improved no-tool feature interaction:
+  - Trees without an axe can yield occasional `Stick`.
+  - Rock/stone/ore features without a pickaxe can yield occasional `Pebble` and sometimes `Flint`.
+  - Full harvesting still requires the proper tool.
+
+Validation:
+
+- Targeted recipe checks confirmed:
+  - With `Grass fiber + Stick + Pebble`, agents can discover `Cordage` first.
+  - With `Cordage + Stick + Pebble`, agents prefer `pebble_axe`.
+- Targeted progression checks confirmed:
+  - An agent with `2 Pebble + Cordage` and no `Stick` now enters progress exploration.
+  - Adjacent progress targets return an `interact` decision instead of failing movement.
+- Targeted world checks confirmed:
+  - Stone outcrops without a pickaxe still sometimes say `needs pickaxe`, but can now also yield `Pebble` and `Flint` through weak manual picking.
+- `logs/session_20260607_020006` confirmed the adjacent-target change in a real Qwen run: Aiden interacted with a nearby `Stone outcrop` through progression redirection.
+
+Current read:
+
+The early survival chain is more playable now: grass/forest gives sticks, pebbles can become stone or a crude axe, and stone outcrops are no longer absolute dead ends before a pickaxe. The next obvious QA target is whether agents actually craft `Stone axe`, chop logs, then craft/place `Workbench` or `Campfire` in a longer run.
+
+## 2026-06-07 12:14 +03: Inventory Limits, Replay Files, And Sprite Placeholders
+
+Reason:
+
+The user confirmed that agents now communicate and progress better, then requested the next production layer:
+
+- Real stacked inventories for every agent.
+- A limit of 15 different item types per agent.
+- Replay recording instead of gameplay videos.
+- Replay playback where movement can be inspected without LLM delays.
+- Sprite files for new NPCs/items/features when final art is not available yet.
+- Updated automation instructions for the new QA surface.
+
+Implementation:
+
+- Added `INVENTORY_SLOT_LIMIT = 15`.
+- Added inventory slot helpers to `Agent`:
+  - `used_inventory_slots`;
+  - `free_inventory_slots`;
+  - `can_accept_item`;
+  - capped `add_items` that respects item `max_stack` and the 15 distinct item limit.
+- Updated item insertion so overflow loot is not silently added beyond stack or slot limits.
+- Updated world interactions so the returned loot matches what actually fit into inventory.
+- Updated craft discovery/craftability to require output inventory space.
+- Fixed output-space checks so consumed ingredients can free a slot for the crafted result.
+- Added `inventory_rules` to the LLM context so agents can see slot use, slot limit, and stack caps for carried items.
+- Updated the LLM developer prompt: if inventory is nearly full, prefer eating, crafting, placing, or using existing stacks over gathering random new item types.
+- Replaced default screen-video recording in `main.py` with replay status. The game now writes replay data through the logger rather than capturing frames.
+- Extended `RunLogger`:
+  - `world.json` contains terrain rows, shade rows, and agent identity/persona metadata.
+  - `replay.jsonl` contains one post-round snapshot per round.
+- Added replay payloads to `Simulation`:
+  - agent positions, previous positions, facing, previous facing, stats, inventory, slot use, thoughts, intents, actions, known recipes;
+  - current feature list with hp;
+  - recent chat and round events.
+- Added `tools/play_replay.py`:
+  - opens newest replay by default or a specific `logs/session_*` directory;
+  - plays without LLM delays;
+  - supports WASD/arrows camera, Tab selected agent, F follow, Space pause, `+`/`-` speed, `[`/`]` stepping.
+- Added `tools/generate_missing_sprites.py`:
+  - writes transparent PNG placeholders for missing sprite specs;
+  - covers terrain, features, items, agents, and UI icons.
+- Ran the sprite generator and wrote 37 missing PNG placeholders, including newer wildlife/placeables/tools/UI.
+- Updated README:
+  - replay workflow;
+  - replay controls;
+  - missing sprite generator;
+  - removed MP4-default wording.
+- Updated heartbeat automation `agent-social-qa-continuation`:
+  - now explicitly checks `replay.jsonl`, replay playback, inventory stacking, 15-slot limits, overflow behavior, and generated/missing sprites.
+
+Validation:
+
+- Targeted inventory test:
+  - A 15-slot inventory refused a new item type.
+  - Existing stack insertion capped at the item `max_stack`.
+  - A full inventory can still craft if consumed ingredients free a slot for the output.
+- Targeted replay test:
+  - A simulation wrote `world.json` and non-empty `replay.jsonl`.
+  - `tools.play_replay.make_replay_sim` reconstructed a replay sim object from those files.
+- Qwen smoke session:
+
+```text
+logs/session_20260607_120938
+```
+
+  - 6 rounds.
+  - 0 LLM fallbacks.
+  - `world.json` and `replay.jsonl` were written.
+  - Replay frames included agent inventory slot counts.
+- Offline smoke session:
+
+```text
+logs/session_20260607_121341
+```
+
+  - 2 rounds.
+  - Replay frame count: 2.
+  - Last frame showed stacked inventories and `used_inventory_slots/15`.
+- `compileall` and targeted `py_compile` passed for core modules and new tools.
+
+Current read:
+
+This is the first real replay layer: it is data-first rather than video-first, so replays can be inspected at arbitrary speed without waiting for LLM calls. Inventory is now mechanically bounded, not just drawn differently. The next development pass should test a longer replay for usability, then continue toward campfire/workbench placement and richer inventory decisions when bags fill up.
+
+## 2026-06-07 12:24 +03: Replay QA And Axe-To-Logs Priority
+
+Reason:
+
+After adding replay files and inventory limits, the next heartbeat pass tested whether those systems held up in a real Qwen run and whether the early tool bridge actually led into the wood chain.
+
+Observed QA session:
+
+```text
+logs/session_20260607_121941
+```
+
+Good signs:
+
+- 10 Qwen rounds completed with 0 LLM fallbacks.
+- `world.json` and `replay.jsonl` were written.
+- Replay had 10 frames matching the turn rounds.
+- No replay inventory frame exceeded the 15-slot limit.
+- `used_inventory_slots` matched actual distinct inventory item counts in every replay frame.
+- Agents performed 17 `interact`, 5 `experiment`, 4 `craft`, and 4 `move` actions.
+- Aiden and Mira both discovered and crafted `Stone axe`, proving the early pebble/cordage bridge is working.
+- Sprite manifest check found 0 missing sprites.
+
+Problems:
+
+- After crafting a `Stone axe`, agents were not consistently biased toward chopping nearby trees for logs.
+- Qwen still internally generated too many invalid place fantasies, though filters blocked them from chat and replacement actions kept turns productive.
+- One line used the wrong tool conceptually, mentioning a wooden pickaxe for tree/stone work in a messy way.
+
+Implementation:
+
+- Updated `_best_immediate_interaction` scoring:
+  - If an agent has an axe, lacks logs, and has fewer than 4 planks, nearby tree features now get top strategic priority.
+  - Forest/wood targets become secondary strategic options.
+  - This makes invalid-place replacements and vague-move conversions prefer chopping trees after the axe milestone.
+- Strengthened the LLM developer prompt with explicit tool roles:
+  - axes chop trees;
+  - pickaxes mine stone and ore;
+  - shovels dig;
+  - fishing rods/nets catch fish.
+
+Validation:
+
+- Targeted scenario:
+  - Agent with `Stone axe` near `Birch tree`, grass, and wildlife chose the `Birch tree` as `_best_immediate_interaction`.
+- `compileall` passed.
+- Targeted `py_compile` passed for `simulation.py`, `llm.py`, `inventory.py`, and `world.py`.
+
+Current read:
+
+The replay and inventory systems look stable enough for continued QA. The next mechanical target remains the base chain after logs: agents should chop enough wood, split logs into planks/sticks, craft `Workbench`, then place it, followed by `Campfire` and cooking.
