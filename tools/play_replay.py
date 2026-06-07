@@ -161,7 +161,7 @@ def make_replay_sim(world_data: dict[str, Any], frame: dict[str, Any], session: 
         )
     chat = [SimpleNamespace(**msg) for msg in frame.get("chat", [])]
     llm_config = SimpleNamespace(provider="replay", enabled=False, model="recorded", timeout=0)
-    llm = SimpleNamespace(config=llm_config, last_successes=0, last_requested=0, last_fallbacks=0, last_duration=0.0, last_error="")
+    llm = SimpleNamespace(config=llm_config, last_successes=0, last_requested=0, last_fallbacks=0, last_provider_fallbacks=0, last_duration=0.0, last_error="")
     return SimpleNamespace(
         world=world,
         agents=agents,

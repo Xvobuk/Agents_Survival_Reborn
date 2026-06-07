@@ -2234,3 +2234,33 @@ Validation:
 Current read:
 
 The user can now watch the agents live and still get a clean stopping point at 200 rounds for inspection.
+
+## 2026-06-08 01:45 +03: Mixed Gemini Fallback To Primary Provider
+
+Reason:
+
+The live mixed Qwen/Gemini run still hit `HTTP Error 429: Too Many Requests` on round 0. Retries help with burst limits, but if Gemini refuses the request immediately, the live window can sit in `THINKING` and the affected agents become ordinary fallback agents.
+
+Implementation:
+
+- Added `gemini_fallback_to_primary` to `LLMConfig`, enabled by default.
+- In mixed mode, if a Gemini-routed agent fails and the primary provider is not Gemini, that agent retries the same decision through the primary provider.
+- Added `last_provider_fallbacks`:
+  - HUD shows `provider swap N`;
+  - headless QA prints `provider_swap=N`.
+- Replay compatibility updated so replay HUD has the new counter.
+
+Validation:
+
+- Mocked provider-fallback test passed:
+  - Gemini route raised mocked 429;
+  - primary provider returned a decision;
+  - `last_successes` stayed complete;
+  - `last_provider_fallbacks` incremented;
+  - no game-level fallback was needed.
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- Offline smoke QA still runs and prints `provider_swap`.
+
+Current read:
+
+This cannot force Gemini to participate when Google refuses the request, but it prevents the live watch run from becoming a frozen or dumb fallback run. The HUD now makes it obvious when Gemini was swapped out for Qwen.

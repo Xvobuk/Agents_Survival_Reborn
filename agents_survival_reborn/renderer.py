@@ -120,7 +120,7 @@ class Renderer:
             llm_state = "on" if sim.llm.config.enabled and sim.llm.config.api_key else "no key" if sim.llm.config.enabled else "offline"
         y = self._wrap(
             screen,
-            f"LLM: {llm_state} | {provider_label} | {model_label} | ok {sim.llm.last_successes}/{sim.llm.last_requested} | fallback {sim.llm.last_fallbacks} | {sim.llm.last_duration:.1f}s/{sim.llm.config.timeout:.0f}s",
+            f"LLM: {llm_state} | {provider_label} | {model_label} | ok {sim.llm.last_successes}/{sim.llm.last_requested} | fallback {sim.llm.last_fallbacks} | provider swap {getattr(sim.llm, 'last_provider_fallbacks', 0)} | {sim.llm.last_duration:.1f}s/{sim.llm.config.timeout:.0f}s",
             x,
             y,
             360,

@@ -82,7 +82,7 @@ def main() -> int:
         actions = Counter(event.kind for event in sim.round_events)
         print(
             f"round={sim.round_index:03d} ok={sim.llm.last_successes}/{sim.llm.last_requested} "
-            f"fallback={sim.llm.last_fallbacks} actions={dict(actions)} chat={len(round_chats)}"
+            f"fallback={sim.llm.last_fallbacks} provider_swap={sim.llm.last_provider_fallbacks} actions={dict(actions)} chat={len(round_chats)}"
             ,
             flush=True,
         )

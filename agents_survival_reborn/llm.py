@@ -99,6 +99,7 @@ class LLMConfig:
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     retry_count: int = 2
+    gemini_fallback_to_primary: bool = True
 
     @classmethod
     def from_env(
@@ -179,6 +180,7 @@ class LLMConfig:
             gemini_api_key=gemini_api_key,
             gemini_base_url=os.getenv("AGENTS_SURVIVAL_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/"),
             retry_count=max(0, retry_count if retry_count is not None else int(os.getenv("AGENTS_SURVIVAL_LLM_RETRIES", "2"))),
+            gemini_fallback_to_primary=os.getenv("AGENTS_SURVIVAL_GEMINI_FALLBACK_TO_PRIMARY", "1").lower() not in {"0", "false", "no", "off"},
         )
 
 
@@ -190,6 +192,7 @@ class LLMDirector:
         self.last_successes = 0
         self.last_failures = 0
         self.last_fallbacks = 0
+        self.last_provider_fallbacks = 0
         self.last_duration = 0.0
         self.last_raw_response = ""
 
@@ -200,6 +203,7 @@ class LLMDirector:
         self.last_successes = 0
         self.last_failures = 0
         self.last_fallbacks = 0
+        self.last_provider_fallbacks = 0
         self.last_duration = 0.0
         if not self.config.enabled:
             self.last_requested = 0
@@ -215,11 +219,15 @@ class LLMDirector:
         decisions: dict[int, Decision] = {}
         with ThreadPoolExecutor(max_workers=self.config.workers) as pool:
             route = self._configs_by_agent(contexts)
-            futures = {pool.submit(self._decide_one, context, route[agent_id]): agent_id for agent_id, context in contexts.items()}
+            futures = {pool.submit(self._decide_with_route, context, route[agent_id]): agent_id for agent_id, context in contexts.items()}
             for future in as_completed(futures):
                 agent_id = futures[future]
                 try:
-                    decisions[agent_id] = future.result()
+                    decision, provider_fallback_error = future.result()
+                    decisions[agent_id] = decision
+                    if provider_fallback_error:
+                        self.last_provider_fallbacks += 1
+                        self.last_error = provider_fallback_error
                 except Exception as exc:
                     self.last_error = str(exc)
                     self.last_failures += 1
@@ -254,6 +262,19 @@ class LLMDirector:
         if config.provider in GEMINI_PROVIDERS:
             return self._decide_gemini(context, config)
         return self._decide_openai_responses(context, config)
+
+    def _decide_with_route(self, context: dict[str, Any], route_config: LLMConfig) -> tuple[Decision, str]:
+        try:
+            return self._decide_one(context, route_config), ""
+        except Exception as exc:
+            if (
+                route_config.provider in GEMINI_PROVIDERS
+                and self.config.provider not in GEMINI_PROVIDERS
+                and self.config.gemini_fallback_to_primary
+            ):
+                fallback_error = f"Gemini failed; used {self.config.provider}: {exc}"
+                return self._decide_one(context, self.config), fallback_error
+            raise
 
     def _decide_openai_responses(self, context: dict[str, Any], config: LLMConfig) -> Decision:
         payload = {
