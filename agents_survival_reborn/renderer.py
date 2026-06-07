@@ -7,7 +7,7 @@ import pygame
 
 from .assets import AssetManager
 from .constants import HUD_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_SIZE
-from .data import FEATURES, ITEMS, TERRAINS, item_name
+from .data import FEATURES, ITEMS, PLACEABLE_ITEMS, TERRAINS, item_name
 
 
 @dataclass
@@ -29,13 +29,24 @@ class Renderer:
         self.small = pygame.font.SysFont("consolas", 12) or pygame.font.Font(None, 12)
         self.title = pygame.font.SysFont("segoeui", 22, bold=True) or pygame.font.Font(None, 22)
 
-    def draw(self, screen: pygame.Surface, sim: object, camera: Camera, selected: int, progress: float, recorder_status: str, paused: bool) -> None:
+    def draw(self, screen: pygame.Surface, sim: object, camera: Camera, selected: int, progress: float, recorder_status: str, paused: bool, mouse_pos: tuple[int, int] | None = None) -> None:
+        mouse_pos = mouse_pos or pygame.mouse.get_pos()
         screen.fill((10, 12, 15))
         world_view = pygame.Rect(0, 0, screen.get_width() - HUD_WIDTH, screen.get_height())
-        self._world(screen, sim, camera, world_view, selected, progress)
-        self._hud(screen, sim, selected, recorder_status, paused)
+        world_tooltip = self._world(screen, sim, camera, world_view, selected, progress, mouse_pos)
+        hud_tooltip = self._hud(screen, sim, selected, recorder_status, paused, mouse_pos)
+        tooltip = hud_tooltip or world_tooltip
+        if tooltip:
+            self._tooltip(screen, tooltip, mouse_pos)
 
-    def _world(self, screen: pygame.Surface, sim: object, camera: Camera, rect: pygame.Rect, selected: int, progress: float) -> None:
+    def _world(self, screen: pygame.Surface, sim: object, camera: Camera, rect: pygame.Rect, selected: int, progress: float, mouse_pos: tuple[int, int]) -> list[str] | None:
+        tooltip: list[str] | None = None
+        hovered_tile: tuple[int, int] | None = None
+        if rect.collidepoint(mouse_pos):
+            tx = int((mouse_pos[0] + camera.x) // TILE_SIZE)
+            ty = int((mouse_pos[1] + camera.y) // TILE_SIZE)
+            if 0 <= tx < sim.world.width and 0 <= ty < sim.world.height:
+                hovered_tile = (tx, ty)
         start_x = max(0, int(camera.x // TILE_SIZE) - 1)
         start_y = max(0, int(camera.y // TILE_SIZE) - 1)
         end_x = min(sim.world.width, int((camera.x + rect.width) // TILE_SIZE) + 2)
@@ -62,6 +73,9 @@ class Renderer:
                     if tile.hp and tile.hp < feature.max_hp and feature.max_hp < 999:
                         pygame.draw.rect(screen, (20, 20, 20), (dest.x + 4, dest.y + TILE_SIZE - 6, TILE_SIZE - 8, 3))
                         pygame.draw.rect(screen, (255, 220, 110), (dest.x + 4, dest.y + TILE_SIZE - 6, int((TILE_SIZE - 8) * tile.hp / feature.max_hp), 3))
+                if hovered_tile == (x, y):
+                    pygame.draw.rect(screen, (255, 236, 120), dest, 2)
+                    tooltip = self._tile_tooltip(tile, x, y)
         self._grid(screen, camera, rect, start_x, start_y, end_x, end_y)
         for index, agent in enumerate(sim.agents):
             rx, ry, dx, dy = self._agent_pose(agent, progress)
@@ -78,8 +92,12 @@ class Renderer:
                 pygame.draw.rect(screen, (255, 236, 120), body_rect.inflate(6, 6), 2, border_radius=5)
             name = self.small.render(agent.name, True, (245, 245, 245))
             screen.blit(name, name.get_rect(center=(sx, sy - 28)))
+            if body_rect.inflate(8, 8).collidepoint(mouse_pos):
+                tooltip = self._agent_tooltip(agent)
+        return tooltip
 
-    def _hud(self, screen: pygame.Surface, sim: object, selected: int, recorder_status: str, paused: bool) -> None:
+    def _hud(self, screen: pygame.Surface, sim: object, selected: int, recorder_status: str, paused: bool, mouse_pos: tuple[int, int]) -> list[str] | None:
+        tooltip: list[str] | None = None
         panel = pygame.Rect(screen.get_width() - HUD_WIDTH, 0, HUD_WIDTH, screen.get_height())
         pygame.draw.rect(screen, (18, 22, 27), panel)
         pygame.draw.line(screen, (70, 78, 88), (panel.left, 0), (panel.left, panel.bottom), 2)
@@ -123,7 +141,7 @@ class Renderer:
         y = self._wrap(screen, f"Thought: {agent.last_thought}", x, y, 360, self.small, (184, 214, 190))
         y = self._wrap(screen, f"Last: {agent.last_action}", x, y, 360, self.small, (215, 218, 222))
         y += 8
-        y = self._inventory_grid(screen, agent, x, y)
+        y, tooltip = self._inventory_grid(screen, agent, x, y, mouse_pos)
         y += 8
         self._minimap(screen, sim, pygame.Rect(x, y, 360, 140), selected)
         y += 154
@@ -132,6 +150,7 @@ class Renderer:
             y = self._wrap(screen, f"{msg.speaker}: {msg.text}", x, y, 360, self.small, (182, 215, 222))
             if y > screen.get_height() - 18:
                 break
+        return tooltip
 
     def _minimap(self, screen: pygame.Surface, sim: object, rect: pygame.Rect, selected: int) -> None:
         pygame.draw.rect(screen, (8, 10, 12), rect)
@@ -145,7 +164,8 @@ class Renderer:
             pygame.draw.circle(screen, agent.color, (px, py), 4 if i == selected else 3)
         pygame.draw.rect(screen, (80, 88, 98), rect, 1)
 
-    def _inventory_grid(self, screen: pygame.Surface, agent: object, x: int, y: int) -> int:
+    def _inventory_grid(self, screen: pygame.Surface, agent: object, x: int, y: int, mouse_pos: tuple[int, int]) -> tuple[int, list[str] | None]:
+        tooltip: list[str] | None = None
         used = getattr(agent, "used_inventory_slots", sum(1 for count in agent.inventory.values() if count > 0))
         limit = getattr(agent, "inventory_slot_limit", 15)
         header = f"Inventory {used}/{limit}"
@@ -176,11 +196,177 @@ class Renderer:
                 fill = max(0.0, min(1.0, count / item.max_stack))
                 bar = pygame.Rect(rect.left + 4, rect.bottom - 5, int((slot - 8) * fill), 2)
                 pygame.draw.rect(screen, (110, 181, 126), bar)
+            if rect.collidepoint(mouse_pos):
+                pygame.draw.rect(screen, (255, 236, 120), rect, 2, border_radius=5)
+                tooltip = self._item_tooltip(item_id, count, agent)
         rows = math.ceil(limit / cols)
         y += rows * (slot + gap) + 4
         if len(inv) > limit:
             y = self._text(screen, f"+{len(inv) - limit} hidden", x, y, self.small, (230, 151, 126), 15)
-        return y
+        return y, tooltip
+
+    def _tile_tooltip(self, tile: object, x: int, y: int) -> list[str]:
+        terrain = TERRAINS[tile.terrain]
+        lines = [f"{terrain.name} ({x}, {y})", self._terrain_description(terrain), self._tags_line(terrain.tags), "Passable terrain" if terrain.passable else "Blocked terrain"]
+        if tile.floor:
+            lines.extend(["", *self._item_tooltip(tile.floor, 1, None, prefix="Floor")])
+        if tile.feature:
+            feature = FEATURES[tile.feature]
+            lines.extend(["", feature.name, self._feature_description(feature), self._tags_line(feature.tags)])
+            lines.append("Passable object" if feature.passable else "Blocks movement")
+            if feature.max_hp < 999:
+                lines.append(f"HP: {tile.hp}/{feature.max_hp}")
+            if feature.required_tool:
+                lines.append(f"Requires: {feature.required_tool} power {feature.min_power}")
+            if "hostile" in feature.tags:
+                lines.append("Danger: can hurt nearby agents")
+            if feature.loot:
+                loot = ", ".join(f"{loot.low}-{loot.high} {item_name(loot.item)}" for loot in feature.loot[:4])
+                lines.append(f"Loot: {loot}")
+            if "station" in feature.tags:
+                lines.append("Station: enables nearby recipes")
+            if "building" in feature.tags or "wall" in feature.tags:
+                lines.append("Building piece: can count toward houses")
+        return lines
+
+    def _agent_tooltip(self, agent: object) -> list[str]:
+        equipment = getattr(agent, "equipment", {})
+        rings = getattr(agent, "rings", [])
+        lines = [
+            f"{agent.name} | {agent.persona.archetype}",
+            f"HP {agent.health:.1f}  Food {agent.hunger:.1f}  Stamina {agent.energy:.1f}",
+            f"Armor: {getattr(agent, 'armor_rating', 0)}",
+            f"Intent: {getattr(agent, 'last_intent', '')}",
+        ]
+        if equipment:
+            lines.append("Gear: " + ", ".join(item_name(item_id) for item_id in equipment.values()))
+        if rings:
+            lines.append(f"Rings: {len(rings)}/10")
+        return lines
+
+    def _item_tooltip(self, item_id: str, count: int, agent: object | None, *, prefix: str = "Item") -> list[str]:
+        item = ITEMS[item_id]
+        lines = [f"{prefix}: {item.name}", self._item_description(item), self._tags_line(item.tags), f"Stack: {count}/{item.max_stack}"]
+        if item.food:
+            quality = getattr(agent, "food_quality", {}).get(item_id, 0) if agent is not None else 0
+            bonus = f" (+{quality} quality)" if quality else ""
+            lines.append(f"Food/effect: +{item.food + quality}{bonus}")
+        if item.durability:
+            current = getattr(agent, "tool_durability", {}).get(item_id, item.durability) if agent is not None else item.durability
+            lines.append(f"Durability: {current}/{item.durability}")
+        if item.tool_tags:
+            lines.append(f"Tool: power {item.tool_power} | {', '.join(item.tool_tags)}")
+        if item.armor:
+            lines.append(f"Armor: {item.armor}")
+        if item.equip_slot:
+            slot = "ring finger" if item.equip_slot == "ring" else item.equip_slot
+            lines.append(f"Equip slot: {slot}")
+        if "station" in item.tags:
+            lines.append("Placeable station")
+        elif item_id in {"wooden_floor", "stone_floor", "wooden_wall", "stone_wall", "wooden_door"}:
+            lines.append("Placeable building piece")
+        elif item_id in PLACEABLE_ITEMS:
+            lines.append("Placeable object")
+        return lines
+
+    @staticmethod
+    def _tags_line(tags: tuple[str, ...]) -> str:
+        return "Tags: " + (", ".join(tags) if tags else "none")
+
+    @staticmethod
+    def _terrain_description(terrain: object) -> str:
+        tags = set(terrain.tags)
+        if "water" in tags:
+            return "Water tile: fishable with a rod or net."
+        if "sand" in tags or "coast" in tags:
+            return "Shore terrain: sand, shells, crabs, and coastal resources."
+        if "forest" in tags:
+            return "Forest ground: trees, plants, wildlife, and early materials."
+        if "rock" in tags or "mountain" in tags:
+            return "Rocky terrain: stone, caves, and ore veins can appear here."
+        if "clay" in tags:
+            return "Clay hills: useful for kiln and building progression."
+        return "Walkable world tile with biome-specific resources."
+
+    @staticmethod
+    def _feature_description(feature: object) -> str:
+        tags = set(feature.tags)
+        if "hostile" in tags:
+            return "Hostile wildlife: dangerous if an agent gets too close."
+        if "animal" in tags or "fish" in tags:
+            return "Wildlife: can move around and may provide food or materials."
+        if "station" in tags:
+            return "Crafting station: unlocks nearby station recipes."
+        if "wall" in tags or "building" in tags:
+            return "Building object: can help form enclosed houses."
+        if "tree" in tags:
+            return "Tree: chop with an axe for logs and wood materials."
+        if "ore" in tags:
+            return "Ore feature: mine with the right pickaxe power."
+        if "plant" in tags:
+            return "Gatherable plant feature."
+        return "World feature that can be inspected or interacted with."
+
+    @staticmethod
+    def _item_description(item: object) -> str:
+        tags = set(item.tags)
+        if "potion" in tags:
+            return "Potion: drink/use it from inventory for a survival effect."
+        if item.food > 0:
+            return "Food item: restores hunger when eaten."
+        if item.armor:
+            return "Equipment: armor that reduces incoming damage."
+        if item.tool_tags:
+            return "Tool or weapon: has durability and action power."
+        if item.equip_slot:
+            return "Equippable accessory."
+        if "station" in tags:
+            return "Placeable station used for crafting progression."
+        if "building" in tags:
+            return "Placeable construction item."
+        if "material" in tags:
+            return "Crafting material for recipes and experiments."
+        return "Inventory item."
+
+    def _tooltip(self, screen: pygame.Surface, lines: list[str], mouse_pos: tuple[int, int]) -> None:
+        wrapped: list[str] = []
+        max_width = 300
+        for line in lines:
+            if not line:
+                wrapped.append("")
+                continue
+            current = ""
+            for word in line.split():
+                test = word if not current else f"{current} {word}"
+                if self.font.size(test)[0] <= max_width:
+                    current = test
+                else:
+                    if current:
+                        wrapped.append(current)
+                    current = word
+            if current:
+                wrapped.append(current)
+        line_h = 17
+        width = min(max_width + 18, max((self.font.size(line)[0] for line in wrapped if line), default=80) + 18)
+        height = max(28, len(wrapped) * line_h + 14)
+        x = mouse_pos[0] + 18
+        y = mouse_pos[1] + 18
+        if x + width > screen.get_width() - 8:
+            x = mouse_pos[0] - width - 18
+        if y + height > screen.get_height() - 8:
+            y = mouse_pos[1] - height - 18
+        rect = pygame.Rect(max(8, x), max(8, y), width, height)
+        pygame.draw.rect(screen, (12, 15, 18), rect, border_radius=6)
+        pygame.draw.rect(screen, (96, 111, 126), rect, 1, border_radius=6)
+        ty = rect.y + 7
+        for index, line in enumerate(wrapped):
+            color = (246, 244, 224) if index == 0 else (207, 216, 224)
+            if not line:
+                ty += 6
+                continue
+            img = self.font.render(line, True, color)
+            screen.blit(img, (rect.x + 9, ty))
+            ty += line_h
 
     def _grid(self, screen: pygame.Surface, camera: Camera, rect: pygame.Rect, sx: int, sy: int, ex: int, ey: int) -> None:
         for x in range(sx, ex + 1):

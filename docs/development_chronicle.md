@@ -1945,3 +1945,63 @@ Validation:
 Current read:
 
 The project is now close to full sprite coverage. The remaining six are specific enough that the next prompt should ask only for those six objects, preferably with two rows of three sprites and lots of padding.
+
+## 2026-06-07 22:30 +03: Hover Tooltips For Items, World Objects, And Replays
+
+Reason:
+
+The user asked to inspect item/world-object characteristics while playing or watching replays:
+
+- inventory items should show name, description, stats, durability, stack, equipment slot, food/effect, and tags;
+- mobs and placed world objects should show what they are;
+- replay playback should support the same hover behavior.
+
+Implementation:
+
+- Updated the shared renderer so tooltips work in both live gameplay and replay playback.
+- Added world hover inspection:
+  - agents;
+  - terrain tiles;
+  - floor/building pieces;
+  - features and mobs;
+  - placed stations/objects.
+- Added inventory hover inspection:
+  - item name;
+  - generated description;
+  - tags;
+  - stack size;
+  - food/effect value and quality bonus;
+  - durability;
+  - tool tags and power;
+  - armor rating;
+  - equipment slot;
+  - placeable/station/building hints.
+- Added feature/terrain descriptions based on tags:
+  - hostile wildlife notes;
+  - station notes;
+  - ore/tool requirements;
+  - loot summaries;
+  - building/house relevance.
+- Updated replay agent reconstruction:
+  - equipment;
+  - rings;
+  - armor rating;
+  - empty durability/food-quality maps for tooltip compatibility.
+
+Validation:
+
+- `compileall` passed for `agents_survival_reborn` and `tools`.
+- Headless live-render smoke:
+  - drew the main game renderer with world hover;
+  - drew the main game renderer with inventory hover;
+  - tooltip code did not crash.
+- Headless replay-render smoke:
+  - loaded newest replay session;
+  - reconstructed replay sim;
+  - drew replay renderer with world hover;
+  - tooltip code did not crash.
+- Placeholder scan still reports 6 remaining tiny placeholders.
+
+Current read:
+
+The viewer experience is now much more inspectable. The next UI improvement would be a click-to-pin inspection panel, but hover tooltips already cover quick reading during live gameplay and replay review.
