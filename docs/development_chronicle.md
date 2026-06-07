@@ -1385,3 +1385,66 @@ Validation:
 Current read:
 
 The first station milestone is now proven in replay and the obvious pre-workbench bridge gap is closed. The next QA focus should move one layer up: whether agents actually use the placed `Workbench` to discover/work toward `Fish net`, `Kiln`, better tools, storage, and shelter instead of treating the station as decorative scenery.
+
+## 2026-06-07 14:08 +03: Post-Workbench QA And Anti-Duplicate Station Rules
+
+Reason:
+
+A 46-round mixed-biome Qwen run tested whether placed workbenches become useful progression anchors:
+
+```text
+logs/session_20260607_134011
+```
+
+Good signs:
+
+- 46 rounds completed with 0 LLM fallbacks.
+- Agents produced 25 accepted chat lines; they were actually hearing and answering each other more often.
+- Aiden reached the station chain again:
+  - discovered `Workbench`;
+  - placed `Workbench`;
+  - later used the same general progression path around placed workbenches.
+- Replay inventory limits stayed valid:
+  - max observed used slots: 9;
+  - no 15-slot violations.
+- Replay contained persistent placed `Workbench` features.
+
+Problems:
+
+- Aiden crafted and placed a second `Workbench` after walking away from the first one. The existing priority check only asked whether a matching station was near the agent, so duplicate station crafting could still look useful once the agent moved.
+- Workbench-tier storage/shelter recipes were not being pulled forward strongly enough. `Wooden crate` stayed available as a reasonable idea in chat, but the simulation did not prioritize the first real crate as the next station-era milestone.
+- Several accepted chat lines were formulaic observation offers:
+  - `I noticed you're near a tree. Do you need help with anything?`
+  - `I noticed you're close to a workbench. Would you like me to help you craft something?`
+  These are technically dialogue, but they make the agents feel like polite helper scripts instead of people with specific goals.
+
+Implementation:
+
+- Added `_world_has_feature` and `_has_item_or_world_station`.
+- Station/placeable craft priority now checks whether a matching feature already exists anywhere in the world, not only adjacent to the agent.
+- Duplicate placeable recipes now return priority `999` when every output placeable already exists in the world or inventory.
+- `_best_urgent_placeable` now avoids placing a duplicate of an existing world feature.
+- Raised first `Wooden crate` priority to `3` when a workbench is nearby.
+- Raised first `Tent`/`Bedroll` priority to `4` when a workbench is nearby.
+- Added `_is_formulaic_observation_offer` to block bland `I noticed/I see you... do you need help` style lines while still allowing specific questions and trade/resource requests.
+
+Validation:
+
+- Targeted duplicate-station snapshot:
+  - existing world `Workbench`;
+  - agent with enough materials and known `Workbench`;
+  - `workbench` recipe priority is now `999`;
+  - `_best_known_craft` returns `None`.
+- Targeted crate snapshot:
+  - agent near an existing `Workbench` with `5 Plank + 8 Stick`;
+  - `wooden_crate` priority is `3`;
+  - `_best_discoverable` returns `wooden_crate`.
+- Targeted speech snapshot:
+  - formulaic `I noticed you're near a tree. Do you need help with anything?` -> blocked as `formulaic observation offer`;
+  - concrete `Do you have two spare sticks for a crate?` -> allowed.
+- `compileall` passed.
+- `tools/generate_missing_sprites.py` reported `written=0 skipped=143`.
+
+Current read:
+
+Workbench duplication is blocked, and the first storage/shelter layer now has enough priority to surface after the station milestone. The next full Qwen pass should check that this produces an actual `Wooden crate` placement and that the stricter chat filter leaves fewer helper-script lines without making agents silent again.

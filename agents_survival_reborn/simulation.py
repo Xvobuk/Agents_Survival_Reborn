@@ -547,7 +547,7 @@ class Simulation:
         ranked: list[tuple[int, str]] = []
         priorities = {"campfire": 1, "workbench": 2, "kiln": 3, "tent": 4, "bedroll": 5, "wooden_crate": 6}
         for item_id in self._placeable_inventory(agent):
-            if self.world.has_station_near(agent.x, agent.y, item_id):
+            if self._world_has_feature(item_id):
                 continue
             ranked.append((priorities.get(item_id, 9), item_id))
         return sorted(ranked)[0][1] if ranked else ""
@@ -567,16 +567,22 @@ class Simulation:
         output_ids = set(outputs)
         if any(ITEMS[item_id].food > 0 and ("cooked" in ITEMS[item_id].tags or agent.hunger < 65) for item_id in output_ids):
             return 0
-        if "campfire" in output_ids and not self._has_item_or_station(agent, "campfire"):
+        if "campfire" in output_ids and not self._has_item_or_world_station(agent, "campfire"):
             return 1
-        if "workbench" in output_ids and not self._has_item_or_station(agent, "workbench"):
+        if "workbench" in output_ids and not self._has_item_or_world_station(agent, "workbench"):
             return 2
-        if "kiln" in output_ids and not self._has_item_or_station(agent, "kiln"):
+        if "kiln" in output_ids and not self._has_item_or_world_station(agent, "kiln"):
             return 3
         if any(self._is_needed_tool(agent, item_id) for item_id in output_ids):
             return 4 + min(self._tool_need_rank(ITEMS[item_id]) for item_id in output_ids if self._is_needed_tool(agent, item_id))
-        if any(item_id in PLACEABLE_ITEMS and not self._has_item_or_station(agent, item_id) for item_id in output_ids):
+        if "wooden_crate" in output_ids and not self._has_item_or_world_station(agent, "wooden_crate"):
+            return 3 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
+        if {"tent", "bedroll"} & output_ids and any(not self._has_item_or_world_station(agent, item_id) for item_id in output_ids if item_id in {"tent", "bedroll"}):
+            return 4 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
+        if any(item_id in PLACEABLE_ITEMS and not self._has_item_or_world_station(agent, item_id) for item_id in output_ids):
             return 5
+        if output_ids and all(item_id in PLACEABLE_ITEMS and self._has_item_or_world_station(agent, item_id) for item_id in output_ids):
+            return 999
         if recipe.recipe_id == "planks_from_log":
             if not self._has_item_or_station(agent, "workbench") and agent.inventory.get("plank", 0) < 4:
                 return 3
@@ -605,6 +611,12 @@ class Simulation:
 
     def _has_item_or_station(self, agent: Agent, item_id: str) -> bool:
         return agent.inventory.get(item_id, 0) > 0 or self.world.has_station_near(agent.x, agent.y, item_id)
+
+    def _has_item_or_world_station(self, agent: Agent, item_id: str) -> bool:
+        return agent.inventory.get(item_id, 0) > 0 or self._world_has_feature(item_id)
+
+    def _world_has_feature(self, feature_id: str) -> bool:
+        return any(tile.feature == feature_id for row in self.world.tiles for tile in row)
 
     @staticmethod
     def _is_needed_tool(agent: Agent, item_id: str) -> bool:
@@ -990,6 +1002,8 @@ class Simulation:
             return "unsupported item or recipe claim"
         if self._claims_unknown_recipe(agent, speech):
             return "unknown recipe claim"
+        if self._is_formulaic_observation_offer(speech):
+            return "formulaic observation offer"
         if self._is_generic_help_offer(speech) and not fresh_question and not self._surplus_inventory_topics(agent):
             return "generic help offer without concrete help"
         if self._is_status_update_speech(agent, speech):
@@ -1081,6 +1095,22 @@ class Simulation:
     def _is_generic_help_offer(speech: str) -> bool:
         lowered = speech.lower()
         return "need any help" in lowered and any(topic in lowered for topic in ("gather", "resource", "craft"))
+
+    @staticmethod
+    def _is_formulaic_observation_offer(speech: str) -> bool:
+        lowered = speech.lower()
+        if not re.search(r"\b(i noticed|i see)\s+(you|you're|you are|you have|you just|you got|you're close|you're near)\b", lowered):
+            return False
+        bland_offer = (
+            "do you need help",
+            "would you like me to help",
+            "would you like some help",
+            "do you want me to help",
+            "do you want to check out",
+            "could use a hand",
+            "why not pick",
+        )
+        return any(marker in lowered for marker in bland_offer)
 
     @staticmethod
     def _is_low_value_smalltalk(speech: str) -> bool:
