@@ -2264,3 +2264,88 @@ Validation:
 Current read:
 
 This cannot force Gemini to participate when Google refuses the request, but it prevents the live watch run from becoming a frozen or dumb fallback run. The HUD now makes it obvious when Gemini was swapped out for Qwen.
+
+## 2026-06-08 02:18 +03: Expanded Survival Materials And 256x256 World
+
+Reason:
+
+The user supplied a large new item list covering stone-age resources, plant fibers, animal materials, building parts, production stations, weapons, fishing gear, farming supplies, cooking, medicine, lighting, and late-game non-magical technology. They also asked for a 256x256 regenerated world, a way to obtain or craft every new item, and placeholder art for anything not covered by the latest atlas.
+
+Implementation:
+
+- Expanded the default world size to 256x256.
+- Added `expanded_content.py` as a data pack for new terrains, features, materials, tools, foods, stations, machines, placeables, and recipes.
+- Added new generated biomes:
+  - limestone karst;
+  - basalt field;
+  - salt flat;
+  - flax meadow;
+  - willow wetland;
+  - chalk downs;
+  - bee grove.
+- Added harvestable features for the new resource families:
+  - flint, obsidian, limestone, granite, slate, basalt, sulfur, saltpeter, kaolin, gypsum, sandstone, rock salt, amber, river pearls;
+  - flax, hemp, cotton, willow withes, dry straw, medicinal flowers, mint, nettles, beehives.
+- Expanded terrain interaction loot so agents can gather seeds, manure, fibers, salt, wetland plants, forest byproducts, special stones, and volcanic/chalk resources without relying only on caves.
+- Expanded cave loot to include new minerals and rare gem-like finds.
+- Added new crafting chains for:
+  - advanced stone tools;
+  - copper and iron construction parts;
+  - production stations;
+  - leather/fiber processing;
+  - ranged weapons and ammunition;
+  - fishing traps and hooks;
+  - farming inputs;
+  - preserved food and simple meals;
+  - medicine and ointments;
+  - lighting;
+  - navigation and late-game machines.
+- Added material bridge recipes so rawhide, thick hide, sinew, limestone, granite, slate, sandstone, chalk, and gypsum feed back into useful crafting chains.
+- Made new placeable stations/buildings behave like checked world objects instead of being accidentally harvested.
+- Allowed `wattle_wall` to count as a valid enclosing house wall.
+- Relaxed the LLM `place_item` schema from a hardcoded old enum to a string, so models can place newly introduced objects that the simulation validates locally.
+- Added friendly `--start-items` aliases:
+  - `wood`, `sticks`, `stones`, `copper`;
+  - Russian aliases such as `дерево`, `камни`, `палки`, `медь`.
+- Added `tools/import_expanded_survival_atlas.py` to slice the user's new 36-item survival atlas in visual order. It tolerates partial ChatGPT atlases and leaves missing sprites as placeholders.
+- Regenerated missing placeholder sprites for the expanded manifest.
+- Updated README with the new start-item aliases and expanded atlas importer command.
+
+Validation:
+
+- `python -m compileall agents_survival_reborn tools` passed.
+- Data integrity check passed:
+  - 272 items;
+  - 197 recipes;
+  - 89 features;
+  - 23 terrains;
+  - 31 placeable item types;
+  - no missing recipe ingredients, outputs, or station references.
+- Generated a 256x256 world with seed 123 and confirmed all new major biomes except none are absent:
+  - limestone karst: 254 tiles;
+  - basalt field: 325 tiles;
+  - salt flat: 342 tiles;
+  - flax meadow: 9327 tiles;
+  - willow wetland: 427 tiles;
+  - chalk downs: 1257 tiles;
+  - bee grove: 983 tiles.
+- Confirmed representative new feature generation:
+  - flint nodules;
+  - limestone outcrops;
+  - basalt outcrops;
+  - saltpeter deposits;
+  - rock salt crusts;
+  - flax/hemp/cotton patches;
+  - willow stands;
+  - beehives;
+  - pearl mussels.
+- Direct no-window simulation smoke test passed:
+  - 256x256 world;
+  - 4 offline agents;
+  - friendly start kit `wood=10,stone=10,sticks=10,copper=10`;
+  - 12 rounds advanced;
+  - agents crafted/placed progression items without crashing.
+
+Current read:
+
+The game now has a much broader survival progression spine. The next QA focus should be whether LLM agents discover these chains naturally, whether the 256x256 map feels too large for social clustering, and whether new stations should be weighted more aggressively in agent goals so society-building does not dissolve into solo foraging.

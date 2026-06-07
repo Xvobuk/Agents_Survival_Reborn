@@ -26,7 +26,7 @@ DECISION_SCHEMA: dict[str, Any] = {
         "target_dx": {"type": "integer", "minimum": -1, "maximum": 1},
         "target_dy": {"type": "integer", "minimum": -1, "maximum": 1},
         "recipe_id": {"type": "string"},
-        "place_item": {"type": "string", "enum": ["", "workbench", "campfire", "kiln", "tent", "wooden_crate", "wooden_door", "bedroll"]},
+        "place_item": {"type": "string"},
         "speech": {"type": "string", "maxLength": 180},
         "private_memory": {"type": "string", "maxLength": 220},
         "intent": {"type": "string", "maxLength": 160},

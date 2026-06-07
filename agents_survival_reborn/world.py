@@ -144,7 +144,7 @@ class World:
 
     def _interact_feature(self, agent: object, tile: Tile, x: int, y: int) -> Interaction:
         feature = FEATURES[tile.feature or ""]
-        if feature.feature_id in {"workbench", "campfire", "kiln", "potion_stand"}:
+        if feature.feature_id in {"workbench", "campfire", "kiln", "potion_stand"} or set(feature.tags) & {"station", "machine", "vehicle", "container"}:
             return Interaction(True, f"checked {feature.name.lower()}", Counter(), "station")
         if feature.feature_id == "tent":
             agent.energy = min(100.0, agent.energy + 18.0)
@@ -157,7 +157,7 @@ class World:
             if bonus:
                 return Interaction(True, f"rested on bedroll inside a {size}-tile house", Counter(), "rest")
             return Interaction(True, "rested on bedroll", Counter(), "rest")
-        if feature.feature_id in {"wooden_crate", "wooden_door", "wooden_wall", "stone_wall"}:
+        if feature.feature_id in {"wooden_crate", "wooden_door", "wooden_wall", "stone_wall", "wattle_wall", "straw_roof"}:
             return Interaction(True, f"checked {feature.name.lower()}", Counter(), "building")
         if feature.feature_id == "cave":
             tool = self._tool(agent, "pickaxe", feature.min_power)
@@ -213,11 +213,11 @@ class World:
         if feature_id in {"gull", "turtle"}:
             return terrain in {"coast", "sand"}
         if feature_id in {"frog", "duck"}:
-            return terrain in {"swamp", "coast", "shallow_water"} or "wet" in terrain_tags
+            return terrain in {"swamp", "willow_wetland", "coast", "shallow_water"} or "wet" in terrain_tags
         if feature_id == "rabbit":
-            return terrain in {"grass", "meadow", "forest_floor", "tundra"}
+            return terrain in {"grass", "meadow", "flax_meadow", "forest_floor", "tundra", "bee_grove"}
         if feature_id in {"deer", "fox", "boar", "wolf", "bear"}:
-            return terrain in {"forest_floor", "jungle", "meadow", "grass", "mushroom_grove"}
+            return terrain in {"forest_floor", "jungle", "meadow", "grass", "flax_meadow", "mushroom_grove", "bee_grove"}
         if feature_id == "snake":
             return terrain in {"sand", "badlands", "grass", "meadow", "coast"}
         return TERRAINS[terrain].passable
@@ -239,6 +239,8 @@ class World:
             loot["sand"] += self.rng.randint(1, 2)
             if self.rng.random() < 0.55:
                 loot["shell"] += 1
+            if self.rng.random() < 0.08:
+                loot["river_pearl"] += 1
             loot = self._give(agent, loot)
             return Interaction(True, "searched the coast", loot, "coast")
         if "grass" in terrain.tags or "forest" in terrain.tags:
@@ -247,16 +249,36 @@ class World:
                 loot["stick"] += 1
             if self.rng.random() < 0.18:
                 loot["berries"] += 1
+            if "fiber" in terrain.tags:
+                loot[self.rng.choice(("flax", "hemp", "cotton"))] += self.rng.randint(1, 2)
+            if "flower" in terrain.tags and self.rng.random() < 0.2:
+                loot[self.rng.choice(("chamomile", "yarrow", "mint", "honeycomb", "beeswax"))] += 1
+            if self.rng.random() < 0.09:
+                loot[self.rng.choice(("flax_seed", "cabbage_seed", "carrot_seed", "potato_seed", "pumpkin_seed", "corn_seed"))] += 1
+            if self.rng.random() < 0.035:
+                loot["manure"] += 1
+            if "forest" in terrain.tags and self.rng.random() < 0.18:
+                loot[self.rng.choice(("birch_bark", "pine_cone", "oak_acorn", "nuts", "maple_sap"))] += 1
             loot = self._give(agent, loot)
             return Interaction(True, "foraged ground cover", loot, "plants")
         if "wet" in terrain.tags:
             loot["reeds"] += self.rng.randint(1, 3)
+            if "fiber" in terrain.tags:
+                loot["willow_withe"] += self.rng.randint(1, 2)
             if self.rng.random() < 0.3:
-                loot["herb"] += 1
+                loot[self.rng.choice(("herb", "mint", "nettle", "reed_fiber"))] += 1
             loot = self._give(agent, loot)
             return Interaction(True, "foraged wet plants", loot, "plants")
+        if "salt" in terrain.tags:
+            loot["rock_salt"] += self.rng.randint(1, 3)
+            if self.rng.random() < 0.35:
+                loot["saltpeter"] += self.rng.randint(1, 2)
+            loot = self._give(agent, loot)
+            return Interaction(True, "scraped salt flats", loot, "salt")
         if "clay" in terrain.tags:
             loot["clay_lump"] += self.rng.randint(1, 4)
+            if self.rng.random() < 0.25:
+                loot[self.rng.choice(("high_quality_clay", "kaolin"))] += 1
             loot = self._give(agent, loot)
             return Interaction(True, "dug clay", loot, "clay")
         if "rock" in terrain.tags or "hill" in terrain.tags:
@@ -266,6 +288,12 @@ class World:
                 loot["stone"] += self.rng.randint(2, 4)
                 if self.rng.random() < 0.2:
                     loot["coal"] += 1
+                if "volcanic" in terrain.tags:
+                    loot[self.rng.choice(("basalt", "obsidian_shard", "sulfur_stone"))] += self.rng.randint(1, 2)
+                elif "chalk" in terrain.tags or "karst" in terrain.tags:
+                    loot[self.rng.choice(("limestone", "chalk", "gypsum", "flint_shard"))] += self.rng.randint(1, 2)
+                elif self.rng.random() < 0.18:
+                    loot[self.rng.choice(("granite", "slate", "sandstone"))] += self.rng.randint(1, 2)
             else:
                 loot["pebble"] += self.rng.randint(1, 3)
                 if self.rng.random() < 0.35:
@@ -276,6 +304,8 @@ class World:
             loot["sand"] += self.rng.randint(1, 3)
             if self.rng.random() < 0.2:
                 loot["flint"] += 1
+            if self.rng.random() < 0.12:
+                loot[self.rng.choice(("dry_straw", "sandstone", "rock_salt"))] += 1
             loot = self._give(agent, loot)
             return Interaction(True, "scooped dry ground", loot, "sand")
         loot["soil"] += 1
@@ -313,7 +343,7 @@ class World:
                     if (nx, ny) not in seen:
                         stack.append((nx, ny))
                     continue
-                if neighbor.feature not in {"wooden_wall", "stone_wall", "wooden_door"}:
+                if neighbor.feature not in {"wooden_wall", "stone_wall", "wattle_wall", "wooden_door"}:
                     enclosed = False
         return enclosed and bool(seen), len(seen)
 
@@ -372,16 +402,24 @@ class World:
     def _cave_loot(self) -> Counter[str]:
         loot: Counter[str] = Counter()
         roll = self.rng.random()
-        if roll < 0.22:
+        if roll < 0.12:
             loot["coal"] += self.rng.randint(1, 4)
-        elif roll < 0.48:
+        elif roll < 0.28:
             loot["copper_ore"] += self.rng.randint(1, 3)
-        elif roll < 0.72:
+        elif roll < 0.43:
             loot["iron_ore"] += self.rng.randint(1, 3)
-        elif roll < 0.9:
+        elif roll < 0.55:
             loot["gold_ore"] += self.rng.randint(1, 2)
-        else:
+        elif roll < 0.62:
             loot["diamond"] += 1
+        elif roll < 0.72:
+            loot[self.rng.choice(("limestone", "granite", "slate", "basalt"))] += self.rng.randint(1, 3)
+        elif roll < 0.82:
+            loot[self.rng.choice(("sulfur_stone", "saltpeter", "gypsum", "kaolin"))] += self.rng.randint(1, 2)
+        elif roll < 0.91:
+            loot[self.rng.choice(("flint_shard", "obsidian_shard", "sandstone", "rock_salt"))] += self.rng.randint(1, 2)
+        else:
+            loot[self.rng.choice(("amber", "river_pearl", "diamond"))] += 1
         loot["stone"] += self.rng.randint(1, 3)
         return loot
 
@@ -419,13 +457,25 @@ class World:
             return "deep_water"
         if h < 0.34:
             return "shallow_water"
+        if m < 0.24 and t > 0.38 and h < 0.66:
+            return "salt_flat"
         if h < 0.39:
             return "coast"
         if h > 0.79:
-            return "snow" if t < 0.35 else "rock"
+            if t < 0.35:
+                return "snow"
+            if m < 0.42 and t > 0.48:
+                return "basalt_field"
+            if m < 0.58:
+                return "limestone_karst"
+            return "rock"
         if h > 0.68:
+            if m < 0.22 and t > 0.42:
+                return "basalt_field"
             if m < 0.32:
                 return "badlands"
+            if m < 0.42 and t < 0.65:
+                return "chalk_downs"
             if m < 0.5:
                 return "clay_hills"
             return "hills"
@@ -433,10 +483,16 @@ class World:
             return "tundra"
         if m > 0.78 and t > 0.45:
             return "jungle"
+        if m > 0.74 and t > 0.34:
+            return "willow_wetland"
         if m > 0.72:
             return "swamp"
         if m < 0.23 and t > 0.34:
             return "sand"
+        if 0.52 < m < 0.72 and 0.38 < t < 0.74 and h > 0.45:
+            return "flax_meadow"
+        if 0.58 < m < 0.76 and 0.36 < t < 0.72 and h > 0.43:
+            return "bee_grove"
         if 0.48 < m < 0.64 and 0.35 < t < 0.72 and h > 0.48:
             return "forest_floor"
         if 0.62 < m < 0.72 and t < 0.6:
@@ -473,6 +529,8 @@ class World:
                 return "kelp"
             if roll < 0.13:
                 return "reef"
+            if roll < 0.142:
+                return "pearl_mussels"
             return None
         if terrain == "shallow_water":
             if roll < 0.05:
@@ -483,6 +541,8 @@ class World:
                 return "duck"
             if roll < 0.13:
                 return "kelp"
+            if roll < 0.15:
+                return "pearl_mussels"
             return None
         if terrain == "coast":
             if roll < 0.055:
@@ -493,6 +553,8 @@ class World:
                 return "turtle"
             if roll < 0.12:
                 return "reeds"
+            if roll < 0.137:
+                return "pearl_mussels"
             return None
         if terrain == "sand":
             if roll < 0.055:
@@ -505,6 +567,10 @@ class World:
                 return "snake"
             if roll < 0.11:
                 return "stone_outcrop"
+            if roll < 0.13:
+                return "sandstone_outcrop"
+            if roll < 0.14:
+                return "rock_salt_crust"
             return None
         if terrain in {"grass", "meadow"}:
             if roll < 0.055:
@@ -519,6 +585,34 @@ class World:
                 return "berry_bush"
             if roll < 0.2:
                 return "birch_tree"
+            if roll < 0.22:
+                return "medicinal_flowers"
+        if terrain == "flax_meadow":
+            if roll < 0.045:
+                return "rabbit"
+            if roll < 0.085:
+                return self.rng.choice(("flax_patch", "hemp_patch", "cotton_bolls"))
+            if roll < 0.13:
+                return "grass_tuft"
+            if roll < 0.165:
+                return "medicinal_flowers"
+            if roll < 0.2:
+                return "berry_bush"
+            if roll < 0.215:
+                return "deer"
+            return None
+        if terrain == "bee_grove":
+            if roll < 0.045:
+                return self.rng.choice(("rabbit", "deer", "fox"))
+            if roll < 0.12:
+                return self.rng.choice(("birch_tree", "oak_tree", "fruit_tree"))
+            if roll < 0.17:
+                return "beehive"
+            if roll < 0.205:
+                return "medicinal_flowers"
+            if roll < 0.24:
+                return "berry_bush"
+            return None
         if terrain in {"forest_floor", "jungle"}:
             if roll < 0.04:
                 return self.rng.choice(("rabbit", "deer", "fox", "boar"))
@@ -532,13 +626,39 @@ class World:
                 return "mushrooms"
             if roll < 0.29:
                 return "herbs"
+            if roll < 0.31:
+                return self.rng.choice(("amber_root", "beehive", "nettles"))
         if terrain == "swamp":
             if roll < 0.045:
                 return self.rng.choice(("frog", "duck"))
             return "reeds" if roll < 0.16 else "mushrooms" if roll < 0.24 else "herbs" if roll < 0.28 else None
+        if terrain == "willow_wetland":
+            if roll < 0.05:
+                return self.rng.choice(("frog", "duck", "turtle"))
+            if roll < 0.13:
+                return "willow_stand"
+            if roll < 0.18:
+                return "reeds"
+            if roll < 0.215:
+                return "mint_patch"
+            if roll < 0.25:
+                return "nettles"
+            if roll < 0.265:
+                return "pearl_mussels"
+            return None
+        if terrain == "salt_flat":
+            if roll < 0.07:
+                return "rock_salt_crust"
+            if roll < 0.12:
+                return "saltpeter_deposit"
+            if roll < 0.145:
+                return "sulfur_deposit"
+            if roll < 0.16:
+                return "snake"
+            return None
         if terrain == "mushroom_grove":
             return "rabbit" if roll < 0.035 else "mushrooms" if roll < 0.18 else "pine_tree" if roll < 0.24 else None
-        if terrain in {"rock", "hills", "badlands", "clay_hills"}:
+        if terrain in {"rock", "hills", "badlands", "clay_hills", "limestone_karst", "chalk_downs", "basalt_field"}:
             return self._rock_feature(terrain, roll)
         if terrain == "snow":
             return "pine_tree" if roll < 0.06 else "snowdrift" if roll < 0.12 else None
@@ -547,12 +667,18 @@ class World:
         return None
 
     def _rock_feature(self, terrain: str, roll: float) -> str | None:
+        if terrain == "limestone_karst":
+            return "limestone_outcrop" if roll < 0.08 else "cave" if roll < 0.12 else "flint_nodule" if roll < 0.155 else "gypsum_crystals" if roll < 0.18 else "kaolin_patch" if roll < 0.2 else None
+        if terrain == "chalk_downs":
+            return "limestone_outcrop" if roll < 0.055 else "flint_nodule" if roll < 0.105 else "gypsum_crystals" if roll < 0.135 else "deer" if roll < 0.155 else None
+        if terrain == "basalt_field":
+            return "basalt_outcrop" if roll < 0.075 else "obsidian_glass" if roll < 0.115 else "sulfur_deposit" if roll < 0.15 else "cave" if roll < 0.17 else None
         if terrain == "clay_hills":
-            return "clay_patch" if roll < 0.11 else "stone_outcrop" if roll < 0.15 else "copper_vein" if roll < 0.17 else None
+            return "clay_patch" if roll < 0.09 else "kaolin_patch" if roll < 0.12 else "stone_outcrop" if roll < 0.16 else "copper_vein" if roll < 0.18 else None
         if terrain == "badlands":
-            return "stone_outcrop" if roll < 0.075 else "coal_vein" if roll < 0.105 else "copper_vein" if roll < 0.13 else "gold_vein" if roll < 0.14 else None
+            return "stone_outcrop" if roll < 0.06 else "sandstone_outcrop" if roll < 0.085 else "coal_vein" if roll < 0.115 else "copper_vein" if roll < 0.14 else "gold_vein" if roll < 0.15 else None
         if roll < 0.05:
-            return "stone_outcrop"
+            return self.rng.choice(("stone_outcrop", "granite_outcrop", "slate_outcrop"))
         if roll < 0.075:
             return "cave"
         if roll < 0.098:

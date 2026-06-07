@@ -5,6 +5,32 @@ from collections import Counter
 from .data import ITEMS
 
 
+START_ITEM_ALIASES = {
+    "wood": "plank",
+    "woods": "plank",
+    "timber": "plank",
+    "log": "pine_log",
+    "logs": "pine_log",
+    "sticks": "stick",
+    "rocks": "stone",
+    "stones": "stone",
+    "copper": "copper_ingot",
+    "iron": "iron_ingot",
+    "gold": "gold_ingot",
+    "дерево": "plank",
+    "древесина": "plank",
+    "бревно": "pine_log",
+    "бревна": "pine_log",
+    "камень": "stone",
+    "камни": "stone",
+    "палка": "stick",
+    "палки": "stick",
+    "медь": "copper_ingot",
+    "железо": "iron_ingot",
+    "золото": "gold_ingot",
+}
+
+
 def parse_start_items(raw: str) -> Counter[str]:
     items: Counter[str] = Counter()
     if not raw.strip():
@@ -16,6 +42,7 @@ def parse_start_items(raw: str) -> Counter[str]:
         if "=" not in chunk:
             raise ValueError(f"Invalid start item entry '{chunk}'. Use item_id=count.")
         item_id, count_text = (part.strip() for part in chunk.split("=", 1))
+        item_id = START_ITEM_ALIASES.get(item_id.lower(), item_id)
         if item_id not in ITEMS:
             raise ValueError(f"Unknown start item '{item_id}'.")
         try:

@@ -71,6 +71,8 @@ python run.py --llama --model qwen2.5:7b --agents 4 --gemini-agents 2 --llm-work
 
 `--max-rounds 200` pauses the live simulation after 200 completed rounds so you
 can inspect the world, agents, inventories, chat, and hover tooltips.
+`--start-items` also accepts friendly aliases such as
+`wood=10,stone=10,sticks=10,copper=10`.
 
 Optional:
 
@@ -205,6 +207,13 @@ write simple PNG placeholders for every missing sprite:
 
 ```powershell
 python tools\generate_missing_sprites.py
+```
+
+For the expanded survival item atlas, use the dedicated importer. It writes any
+detected sprites in visual order and leaves the rest as placeholders:
+
+```powershell
+python tools\import_expanded_survival_atlas.py "C:\path\to\ChatGPT Image.png" --preview
 ```
 
 ## Replays

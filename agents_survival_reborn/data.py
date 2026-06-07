@@ -365,6 +365,11 @@ PLACEABLE_ITEMS = frozenset(
     }
 )
 
+from .expanded_content import apply_expanded_content
+
+RECIPES, PLACEABLE_ITEMS = apply_expanded_content(TERRAINS, FEATURES, ITEMS, RECIPES, PLACEABLE_ITEMS)
+RECIPES_BY_ID = {recipe.recipe_id: recipe for recipe in RECIPES}
+
 
 AGENT_SPRITES = (
     "agent_methodical_builder",
