@@ -1817,3 +1817,85 @@ Validation:
 Current read:
 
 This is the first real vertical progression layer. The next QA pass should watch whether Qwen discovers the kiln/glass/bottle/potion path naturally or whether the recipe-priority heuristics need a nudge toward alchemy after agents stabilize food and tools.
+
+## 2026-06-07 21:58 +03: Imported Advanced Progression Atlas
+
+Reason:
+
+The user supplied a ChatGPT atlas for the new metals/alchemy/equipment pass. The atlas did not follow the prompt exactly, but it produced many usable sprites:
+
+- predators;
+- potion stand;
+- hide/leather/venom;
+- several weapons;
+- rings;
+- some armor pieces;
+- potions;
+- cactus spine;
+- chat UI icon.
+
+Implementation:
+
+- Added `tools/import_advanced_progression_atlas.py`:
+  - detects visible alpha components globally;
+  - sorts them by visual row/column;
+  - maps only sprites that clearly match game ids;
+  - skips ambiguous duplicates or wrong item types;
+  - writes contact-sheet and detection previews.
+- Imported 25 sprite ids:
+  - `feature_wolf`;
+  - `feature_bear`;
+  - `feature_snake`;
+  - `feature_potion_stand`;
+  - `item_potion_stand`;
+  - `item_hide`;
+  - `item_leather`;
+  - `item_venom_sac`;
+  - `item_copper_axe`;
+  - `item_copper_sword`;
+  - `item_iron_sword`;
+  - `item_stone_knife`;
+  - `item_gold_ring`;
+  - `item_diamond_ring`;
+  - `item_iron_axe`;
+  - `item_iron_chestplate`;
+  - `item_leather_tunic`;
+  - `item_leather_boots`;
+  - `item_iron_helmet`;
+  - `item_leather_cap`;
+  - `item_iron_boots`;
+  - `item_healing_potion`;
+  - `item_stamina_potion`;
+  - `item_cactus_spine`;
+  - `ui_chat`.
+
+Validation:
+
+- Visual contact sheet showed clean isolated imports.
+- Corrected the first mapping pass:
+  - the copper axe is now imported as `item_copper_axe`;
+  - an ambiguous alternate iron torso piece is skipped instead of pretending to be gauntlets.
+- Placeholder-size scan now reports 19 remaining tiny placeholders:
+  - `item_glass_bottle`;
+  - `item_cactus_flesh`;
+  - `item_crab_meat`;
+  - `item_cooked_fish`;
+  - `item_cooked_crab`;
+  - `item_fried_egg`;
+  - `item_resin`;
+  - `item_diamond_edged_pickaxe`;
+  - `item_diamond_edged_sword`;
+  - `item_copper_ring`;
+  - `item_gold_necklace`;
+  - `item_diamond_amulet`;
+  - `item_leather_gloves`;
+  - `item_leather_pants`;
+  - `item_iron_gauntlets`;
+  - `item_iron_greaves`;
+  - `item_antidote`;
+  - `item_wooden_pickaxe`;
+  - `item_fishing_rod`.
+
+Current read:
+
+Most of the new progression layer now has real art. One final small atlas focused only on these 19 leftovers should finish the current placeholder cleanup without asking ChatGPT to juggle the whole progression tree again.
