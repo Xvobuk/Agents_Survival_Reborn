@@ -45,6 +45,8 @@ STATUS_UPDATE_PATTERNS = (
     r"\bset up my\s+(campfire|workbench|kiln|base)\b",
     r"\bwhat would you like to do\b",
     r"\bcenter of the map\b",
+    r"\bcenter of (this|the) area\b",
+    r"\bi'?m currently at\b.*\bcenter\b",
 )
 
 DIALOGUE_MARKERS = {
@@ -431,7 +433,8 @@ class Simulation:
 
     def _productive_replacement(self, agent: Agent, decision: Decision, reason: str) -> tuple[Decision, str]:
         recipe = self._best_known_craft(agent)
-        if recipe:
+        discoverable_recipe = self._best_discoverable(agent)
+        if recipe and (not discoverable_recipe or self._craft_priority(agent, recipe) <= self._craft_priority(agent, discoverable_recipe)):
             adjusted = Decision(
                 action="craft",
                 recipe_id=recipe.recipe_id,
@@ -442,13 +445,13 @@ class Simulation:
             )
             agent.last_intent = adjusted.intent
             return adjusted, reason
-        if self._best_discoverable(agent):
+        if discoverable_recipe:
             adjusted = Decision(
                 action="experiment",
                 speech=decision.speech,
                 private_memory=decision.private_memory,
-                intent="test available materials for a recipe",
-                thought="I do not have a valid station or recipe ready, so testing materials is better than pretending.",
+                intent=f"test materials for {discoverable_recipe.name}",
+                thought=f"{discoverable_recipe.name} looks like the more important next recipe to test.",
             )
             agent.last_intent = adjusted.intent
             return adjusted, reason
@@ -493,14 +496,18 @@ class Simulation:
             return 4 + min(self._tool_need_rank(ITEMS[item_id]) for item_id in output_ids if self._is_needed_tool(agent, item_id))
         if any(item_id in PLACEABLE_ITEMS and not self._has_item_or_station(agent, item_id) for item_id in output_ids):
             return 5
+        if recipe.recipe_id == "planks_from_log":
+            if not self._has_item_or_station(agent, "workbench") and agent.inventory.get("plank", 0) < 4:
+                return 3
+            return 8 if agent.inventory.get("plank", 0) < 12 else 999
+        if recipe.recipe_id == "sticks_from_log":
+            if not self._has_item_or_station(agent, "workbench") and agent.inventory.get("stick", 0) < 2:
+                return 4
+            return 7 if agent.inventory.get("stick", 0) < 10 else 999
         if recipe.recipe_id == "cordage_from_fiber":
             return 6 if agent.inventory.get("cordage", 0) < 4 else 999
         if recipe.recipe_id == "stone_from_pebbles":
             return 6 if agent.inventory.get("stone", 0) < 5 else 999
-        if recipe.recipe_id == "sticks_from_log":
-            return 7 if agent.inventory.get("stick", 0) < 10 else 999
-        if recipe.recipe_id == "planks_from_log":
-            return 8 if agent.inventory.get("plank", 0) < 12 else 999
         if recipe.recipe_id == "arrows":
             return 9 if agent.inventory.get("arrow", 0) < 16 else 999
         if any(ITEMS[item_id].durability and agent.inventory.get(item_id, 0) <= 0 for item_id in output_ids):
@@ -560,6 +567,10 @@ class Simulation:
         if re.search(r"\b(i will|i'?ll|i am|i'?m|i am going to|i'?m going to|i should|i need to|i want to|plan to|want to|need to|might want to)\b", lowered):
             return ""
         if re.search(r"\bmoved\s+(to|from)\s*\(\s*-?\d+\s*,\s*-?\d+\s*\)", lowered):
+            return ""
+        if re.search(r"\bmoved\s+(north|south|east|west|left|right|up|down)\b", lowered):
+            return ""
+        if "no action needed" in lowered:
             return ""
         if re.search(r"\blocation\s*:\s*\(\s*-?\d+\s*,\s*-?\d+\s*\)", lowered):
             return ""

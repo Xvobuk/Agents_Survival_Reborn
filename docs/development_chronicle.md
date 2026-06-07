@@ -1128,3 +1128,60 @@ Validation:
 Current read:
 
 The replay and inventory systems look stable enough for continued QA. The next mechanical target remains the base chain after logs: agents should chop enough wood, split logs into planks/sticks, craft `Workbench`, then place it, followed by `Campfire` and cooking.
+
+## 2026-06-07 12:44 +03: Logs-To-Planks Progression And Status Chat Leak
+
+Reason:
+
+A longer Qwen QA run tested whether the post-axe tree priority really advanced into the wood/base chain.
+
+Observed QA session:
+
+```text
+logs/session_20260607_123718
+```
+
+Good signs:
+
+- 14 Qwen rounds completed with 0 LLM fallbacks.
+- Actions included 21 `interact`, 9 `craft`, 4 `experiment`, and 8 `move`.
+- Mira crafted `Stone axe`.
+- Mira worked a `Birch tree` multiple times and eventually harvested `2 Birch log`, `1 Stick`, and `1 Bark`.
+- Replay and turn logs remained readable for progression analysis.
+
+Problems:
+
+- One status line leaked into accepted chat:
+  - `I'm currently at the center of this area. Let me explore a bit to see what I can find.`
+- After getting logs, Mira still crafted another `Cordage` instead of discovering `Rough planks`.
+- Private memory accepted a useless navigation note:
+  - `Moved east. No action needed for now.`
+
+Implementation:
+
+- Expanded status speech filters:
+  - `center of this area`;
+  - `center of the area`;
+  - `I'm currently at ... center`.
+- Expanded private-memory rejection for:
+  - `Moved east/west/north/south/left/right/up/down`;
+  - `no action needed`.
+- Reprioritized wood-chain recipes:
+  - `planks_from_log` now outranks extra `Cordage` when the agent lacks a `Workbench` and has fewer than 4 planks.
+  - `sticks_from_log` outranks extra `Cordage` when the agent lacks a `Workbench` and has fewer than 2 sticks.
+- Updated `_productive_replacement`:
+  - It now compares the best known craft against the best discoverable recipe.
+  - If the hidden/discoverable recipe has higher priority, the agent experiments instead of crafting a lower-priority known recipe.
+
+Validation:
+
+- Targeted status check confirmed the leaked `center of this area` line is now blocked.
+- Targeted recipe check confirmed:
+  - with `Birch log + Cordage + Stick + Grass fiber` and only `Cordage` known, `planks_from_log` is the best discoverable recipe;
+  - productive replacement chooses `experiment` for `Rough planks` instead of crafting more `Cordage`.
+- `compileall` passed.
+- Targeted `py_compile` passed for `simulation.py` and `llm.py`.
+
+Current read:
+
+The survival tech chain now has a clearer next step: once agents chop logs, replacement logic should push them toward discovering and crafting planks before hoarding extra cordage. The next QA target is whether a longer run reaches `Workbench` and then actually places it.
