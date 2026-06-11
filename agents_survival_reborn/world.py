@@ -157,7 +157,12 @@ class World:
             if bonus:
                 return Interaction(True, f"rested on bedroll inside a {size}-tile house", Counter(), "rest")
             return Interaction(True, "rested on bedroll", Counter(), "rest")
-        if feature.feature_id in {"wooden_crate", "wooden_door", "wooden_wall", "stone_wall", "wattle_wall", "straw_roof"}:
+        if feature.feature_id in {"wooden_wall", "stone_wall", "wattle_wall"}:
+            tile.feature = None
+            tile.hp = 0
+            loot = self._give(agent, Counter({feature.feature_id: 1}))
+            return Interaction(True, f"dismantled {feature.name.lower()}", loot, "building")
+        if feature.feature_id in {"wooden_crate", "wooden_door", "straw_roof"}:
             return Interaction(True, f"checked {feature.name.lower()}", Counter(), "building")
         if feature.feature_id == "cave":
             tool = self._tool(agent, "pickaxe", feature.min_power)

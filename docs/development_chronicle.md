@@ -2349,3 +2349,72 @@ Validation:
 Current read:
 
 The game now has a much broader survival progression spine. The next QA focus should be whether LLM agents discover these chains naturally, whether the 256x256 map feels too large for social clustering, and whether new stations should be weighted more aggressively in agent goals so society-building does not dissolve into solo foraging.
+
+## 2026-06-12 03:02 +03: Anti-Craft-Stall And Building Escape QA
+
+Reason:
+
+The user reported that when agents started with 99-resource test kits, they stood almost still and mostly crafted, occasionally placing floor tiles. This was a real behavior bug: abundant resources made almost every recipe available, and the fallback/progression guard treated repeated crafting as productive even when the agents were no longer using the crafted objects.
+
+Findings:
+
+- Initial 99-resource smoke test reproduced the issue:
+  - 40 rounds;
+  - 8 agents;
+  - 208 craft actions;
+  - only 4 place actions;
+  - every agent had only 1 unique position.
+- `recent_actions` entries are stored with round prefixes such as `r7: crafted ...`, so the first craft-streak detector did not see repeated crafting.
+- Non-building placeables, such as a workbench, could only be placed under the agent's feet. If a campfire was already there, agents kept crafting instead of placing the workbench nearby.
+- Building-piece priority counted floors and walls together. Once agents placed enough floors, wall recipes became low priority, so they kept making/placing floors instead of enclosing rooms.
+- Agents could box themselves in with walls, which produced `could not find a move` waits and passive wall/workbench checks.
+
+Implementation:
+
+- Added craft-loop interruption:
+  - after repeated craft/experiment actions, agents must place a useful item, work a real nearby resource, move, or open an escape.
+- Fixed craft-streak detection for round-prefixed action log entries.
+- Changed nearby placement so all placeable objects can be placed in adjacent cells, not only building pieces.
+- Added safer wall placement:
+  - agents avoid placing walls that remove their last adjacent exit.
+- Added wall dismantling:
+  - interacting with wooden/stone/wattle walls dismantles them and returns the wall item;
+  - fallback movement dismantles an adjacent wall if the agent has no valid movement exit.
+- Separated building priorities:
+  - floors no longer satisfy the need for walls;
+  - walls become important once enough floor exists;
+  - doors become useful once wall count is high enough.
+- Added stockpile caps for repetitive components and ammunition:
+  - copper/iron nails;
+  - rivets/brackets;
+  - copper/iron wire;
+  - arrows and sling stones.
+- Stopped full-resource agents from treating ordinary grass/soil interactions as progress.
+- Prevented passive station/storage/building checks from being selected as best immediate productive interactions.
+
+Validation:
+
+- `python -m compileall agents_survival_reborn tools` passed.
+- Re-ran the exact high-resource stress style:
+  - 8 agents;
+  - 120 rounds;
+  - `wood=99,stone=99,sticks=99,copper=99`;
+  - 96x96 smoke map for speed.
+- Final action distribution:
+  - move: 324;
+  - interact: 299;
+  - place: 157;
+  - craft: 107;
+  - experiment: 73;
+  - danger: 15.
+- Final construction result:
+  - 68 floor tiles;
+  - 72 wooden walls;
+  - workbench, campfire, and crate placed.
+- Every agent moved meaningfully:
+  - unique positions ranged from 15 to 38 over 120 rounds.
+- Final event tail had no passive `checked wall/workbench` spam and no `could not find a move` entries.
+
+Current read:
+
+The 99-resource test kit now produces a builder/explorer rhythm instead of a frozen crafting printer. It is still worth watching a real LLM run because model decisions can add new weirdness, but the deterministic safety rails now push agents away from inventory loops and toward visible world changes.

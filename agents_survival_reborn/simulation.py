@@ -274,6 +274,18 @@ class Simulation:
             recipe = RECIPES_BY_ID.get(decision.recipe_id)
             if not recipe or recipe.recipe_id not in agent.known_recipes or not has_ingredients(agent.inventory, recipe):
                 return self._productive_replacement(agent, decision, "invalid craft replaced")
+            if self._should_interrupt_craft_loop(agent, recipe):
+                replacement = self._post_craft_activity(agent, decision)
+                if replacement:
+                    agent.last_intent = replacement.intent
+                    return replacement, "craft loop interrupted"
+            return decision, ""
+        if decision.action == "experiment":
+            if self._recent_craft_streak(agent) >= 2:
+                replacement = self._post_craft_activity(agent, decision)
+                if replacement:
+                    agent.last_intent = replacement.intent
+                    return replacement, "experiment loop interrupted"
             return decision, ""
         if decision.action == "place":
             if decision.place_item not in PLACEABLE_ITEMS or agent.inventory.get(decision.place_item, 0) <= 0:
@@ -281,6 +293,21 @@ class Simulation:
             return decision, ""
         if decision.action in {"move", "interact", "talk", "experiment", "wait"} and self._looks_like_unsupported_world_plan(decision):
             return self._productive_replacement(agent, decision, "unsupported world plan replaced")
+        if decision.action == "interact" and self._is_passive_feature_interaction(agent, decision):
+            replacement = self._active_reposition(agent, decision, "leave passive building object")
+            if replacement:
+                agent.last_intent = replacement.intent
+                return replacement, "passive feature interaction interrupted"
+        if decision.action == "interact" and self._is_low_value_ground_interaction(agent, decision):
+            replacement = self._active_reposition(agent, decision, "leave exhausted ground")
+            if replacement:
+                agent.last_intent = replacement.intent
+                return replacement, "low-value ground interaction interrupted"
+        if decision.action in {"interact", "wait"} and self._should_break_local_stall(agent):
+            replacement = self._active_reposition(agent, decision, "break local stall")
+            if replacement:
+                agent.last_intent = replacement.intent
+                return replacement, "local stall interrupted"
         if decision.action in {"move", "interact", "talk", "wait"}:
             urgent = self._urgent_progression_decision(agent, decision)
             if urgent:
@@ -520,6 +547,11 @@ class Simulation:
         return False
 
     def _productive_replacement(self, agent: Agent, decision: Decision, reason: str) -> tuple[Decision, str]:
+        if self._recent_craft_streak(agent) >= 2:
+            post_craft = self._post_craft_activity(agent, decision)
+            if post_craft:
+                agent.last_intent = post_craft.intent
+                return post_craft, reason
         urgent = self._urgent_progression_decision(agent, decision)
         if urgent:
             agent.last_intent = urgent.intent
@@ -573,6 +605,155 @@ class Simulation:
             return adjusted, reason
         return Decision("wait", speech=decision.speech, private_memory=decision.private_memory, intent="avoid invalid action", thought="I caught myself trying something invalid, so I need to reassess."), reason
 
+    def _should_break_local_stall(self, agent: Agent) -> bool:
+        recent = [action.lower() for action in list(agent.recent_actions)[-8:]]
+        if len(recent) < 5 or any(": moved " in action for action in recent):
+            return False
+        low_value_hits = sum(
+            1
+            for action in recent
+            if any(
+                marker in action
+                for marker in (
+                    "checked wooden crate",
+                    "checked workbench",
+                    "checked campfire",
+                    "checked wooden wall",
+                    "checked stone wall",
+                    "checked wattle wall",
+                    "checked wooden door",
+                    "foraged ground cover; got nothing",
+                    "gathered soil",
+                )
+            )
+        )
+        craft_hits = sum(1 for action in recent if ": crafted " in action or ": discovered " in action)
+        return low_value_hits >= 3 or craft_hits >= 5
+
+    def _should_interrupt_craft_loop(self, agent: Agent, recipe: RecipeDef) -> bool:
+        streak = self._recent_craft_streak(agent)
+        if streak < 2:
+            return False
+        priority = self._craft_priority(agent, recipe)
+        output_ids = {item_id for item_id, _count in recipe.outputs}
+        if priority <= 2 and not any(item_id in PLACEABLE_ITEMS for item_id in output_ids):
+            return False
+        if any(item_id in PLACEABLE_ITEMS for item_id in output_ids):
+            return True
+        if streak >= 3:
+            return True
+        if agent.used_inventory_slots >= agent.inventory_slot_limit - 1:
+            return True
+        return priority >= 4
+
+    @staticmethod
+    def _recent_craft_streak(agent: Agent) -> int:
+        streak = 0
+        for action in reversed(agent.recent_actions):
+            lowered = action.lower()
+            if ": crafted " in lowered or ": discovered " in lowered or ": experimented " in lowered or "unlocked and crafted" in lowered:
+                streak += 1
+                continue
+            break
+        return streak
+
+    def _post_craft_activity(self, agent: Agent, decision: Decision) -> Decision | None:
+        place_item = self._best_urgent_placeable(agent)
+        if place_item:
+            return Decision(
+                action="place",
+                place_item=place_item,
+                speech=decision.speech,
+                private_memory=decision.private_memory,
+                intent=f"place crafted {item_name(place_item)}",
+                thought=f"I have been crafting long enough; {item_name(place_item)} needs to leave my pack and shape the camp.",
+            )
+        progress_move = self._progress_exploration_move(agent, decision)
+        if progress_move:
+            return progress_move
+        option = self._best_resource_interaction(agent, include_ground=False)
+        if option:
+            target = str(option["target"]).lower()
+            return Decision(
+                action="interact",
+                target_dx=int(option["target_dx"]),
+                target_dy=int(option["target_dy"]),
+                speech=decision.speech,
+                private_memory=decision.private_memory,
+                intent=f"use surroundings after crafting {target}",
+                thought=f"Enough bench work for a moment; checking {option['target']} keeps me from freezing in place.",
+            )
+        return self._active_reposition(agent, decision, "move after crafting burst")
+
+    def _best_resource_interaction(self, agent: Agent, *, include_ground: bool = True) -> dict[str, Any] | None:
+        useful_tags = {"animal", "fish", "tree", "plant", "ore", "rock", "stone", "clay", "wood", "food", "fiber", "medicine", "gem"}
+        blocked_tags = {"station", "storage", "container", "building", "wall", "rest", "shelter", "machine", "vehicle"}
+        options: list[dict[str, Any]] = []
+        for option in self._immediate_actions(agent):
+            if not option.get("available") or option.get("target_type") == "placeable":
+                continue
+            tags = set(option.get("tags", []))
+            if tags & blocked_tags:
+                continue
+            if (include_ground and option.get("target_type") == "ground") or tags & useful_tags:
+                options.append(option)
+        if not options:
+            return None
+        return sorted(options, key=lambda option: (option.get("target_type") == "ground", abs(int(option["target_dx"])) + abs(int(option["target_dy"]))))[0]
+
+    def _is_low_value_ground_interaction(self, agent: Agent, decision: Decision) -> bool:
+        tx, ty = agent.x + decision.target_dx, agent.y + decision.target_dy
+        if not self.world.in_bounds(tx, ty):
+            return False
+        tile = self.world.tile(tx, ty)
+        if tile.feature:
+            return False
+        terrain = TERRAINS[tile.terrain]
+        if "water" in terrain.tags or "rock" in terrain.tags or "clay" in terrain.tags or "salt" in terrain.tags:
+            return False
+        basics = agent.inventory.get("plank", 0) + agent.inventory.get("stone", 0) + agent.inventory.get("stick", 0)
+        if basics >= 80:
+            return True
+        recent = " ".join(list(agent.recent_actions)[-5:]).lower()
+        return recent.count("foraged ground cover") >= 3 or recent.count("gathered soil") >= 3
+
+    def _active_reposition(self, agent: Agent, decision: Decision, intent: str) -> Decision | None:
+        directions = list(DIRECTIONS)
+        self.rng.shuffle(directions)
+        center_bias = (_sign(agent.start_x - agent.x), _sign(agent.start_y - agent.y))
+        if center_bias != (0, 0):
+            directions.insert(0, center_bias)
+        for dx, dy in directions:
+            if dx == 0 and dy == 0:
+                continue
+            nx, ny = agent.x + dx, agent.y + dy
+            if self.world.can_enter(agent, nx, ny):
+                return Decision(
+                    action="move",
+                    dx=dx,
+                    dy=dy,
+                    speech=decision.speech,
+                    private_memory=decision.private_memory,
+                    intent=intent,
+                    thought="I have been standing over my inventory too long; moving will reveal better building and resource options.",
+                )
+        for dx, dy in DIRECTIONS:
+            tx, ty = agent.x + dx, agent.y + dy
+            if not self.world.in_bounds(tx, ty):
+                continue
+            feature_id = self.world.tile(tx, ty).feature
+            if feature_id in {"wooden_wall", "stone_wall", "wattle_wall"}:
+                return Decision(
+                    action="interact",
+                    target_dx=dx,
+                    target_dy=dy,
+                    speech=decision.speech,
+                    private_memory=decision.private_memory,
+                    intent="open an escape from cramped building",
+                    thought="I boxed myself in; taking down a wall is better than standing here.",
+                )
+        return None
+
     def _urgent_progression_decision(self, agent: Agent, decision: Decision) -> Decision | None:
         place_item = self._best_urgent_placeable(agent)
         if place_item:
@@ -607,7 +788,25 @@ class Simulation:
 
     def _best_urgent_placeable(self, agent: Agent) -> str:
         ranked: list[tuple[int, str]] = []
-        priorities = {"campfire": 1, "workbench": 2, "kiln": 3, "tent": 4, "bedroll": 5, "wooden_crate": 6, "wooden_floor": 7, "stone_floor": 7, "wooden_wall": 8, "stone_wall": 8}
+        priorities = {
+            "campfire": 1,
+            "workbench": 2,
+            "kiln": 3,
+            "carpenter_table": 4,
+            "stonecutting_table": 4,
+            "loom": 4,
+            "tanning_table": 4,
+            "smelter": 4,
+            "tent": 5,
+            "bedroll": 6,
+            "wooden_crate": 7,
+            "wooden_floor": 8,
+            "stone_floor": 8,
+            "wooden_wall": 9,
+            "stone_wall": 9,
+            "wattle_wall": 9,
+            "wooden_door": 10,
+        }
         unique_placeables = {"campfire", "workbench", "kiln", "tent", "bedroll", "wooden_crate"}
         for item_id in self._placeable_inventory(agent):
             if item_id in unique_placeables and self._world_has_feature(item_id):
@@ -649,18 +848,48 @@ class Simulation:
         if any("potion" in ITEMS[item_id].tags for item_id in output_ids):
             return 6 if agent.health < 75 or agent.energy < 55 else 11
         if any("jewelry" in ITEMS[item_id].tags for item_id in output_ids):
+            if any(ITEMS[item_id].equip_slot == "ring" for item_id in output_ids) and len(agent.rings) >= 10:
+                return 999
             return 10
+        stockpile_caps = {
+            "copper_nails": 24,
+            "iron_nails": 24,
+            "copper_rivets": 18,
+            "iron_brackets": 12,
+            "copper_wire": 12,
+            "iron_wire": 12,
+            "sling_stones": 24,
+            "flint_arrows": 24,
+            "copper_arrows": 24,
+            "iron_arrows": 24,
+        }
+        if output_ids and all(item_id in stockpile_caps for item_id in output_ids):
+            if all(agent.inventory.get(item_id, 0) >= stockpile_caps[item_id] for item_id in output_ids):
+                return 999
+            return 12
         if "wooden_crate" in output_ids and not self._has_item_or_world_station(agent, "wooden_crate"):
             return 3 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
         if {"tent", "bedroll"} & output_ids and any(not self._has_item_or_world_station(agent, item_id) for item_id in output_ids if item_id in {"tent", "bedroll"}):
             return 4 if self.world.has_station_near(agent.x, agent.y, "workbench") else 5
-        building_pieces = {"wooden_floor", "stone_floor", "wooden_wall", "stone_wall"}
-        if output_ids & building_pieces:
-            stock = sum(agent.inventory.get(item_id, 0) for item_id in building_pieces)
-            placed = self._placed_building_piece_count()
-            if stock + placed < 16:
+        floor_pieces = {"wooden_floor", "stone_floor"}
+        wall_pieces = {"wooden_wall", "stone_wall", "wattle_wall"}
+        if output_ids & wall_pieces:
+            floors = self._placed_floor_count() + sum(agent.inventory.get(item_id, 0) for item_id in floor_pieces)
+            walls = self._placed_wall_count() + sum(agent.inventory.get(item_id, 0) for item_id in wall_pieces)
+            target_walls = max(8, min(36, floors // 2))
+            if floors >= 6 and walls < target_walls:
+                return 3 if self.world.has_station_near(agent.x, agent.y, "workbench") else 6
+            return 9 if walls < target_walls + 8 else 999
+        if "wooden_door" in output_ids:
+            if self._placed_wall_count() >= 6 and not self._has_item_or_world_station(agent, "wooden_door"):
+                return 4
+            return 11 if agent.inventory.get("wooden_door", 0) <= 0 else 999
+        if output_ids & floor_pieces:
+            floors = self._placed_floor_count() + sum(agent.inventory.get(item_id, 0) for item_id in floor_pieces)
+            walls = self._placed_wall_count() + sum(agent.inventory.get(item_id, 0) for item_id in wall_pieces)
+            if floors < 12:
                 return 4 if self.world.has_station_near(agent.x, agent.y, "workbench") else 6
-            if stock + placed < 40:
+            if floors < 28 and walls >= floors // 3:
                 return 8
             return 999
         if any(item_id in PLACEABLE_ITEMS and not self._has_item_or_world_station(agent, item_id) for item_id in output_ids):
@@ -708,9 +937,15 @@ class Simulation:
             for tile in row:
                 if tile.floor:
                     count += 1
-                if tile.feature in {"wooden_wall", "stone_wall"}:
+                if tile.feature in {"wooden_wall", "stone_wall", "wattle_wall", "wooden_door"}:
                     count += 1
         return count
+
+    def _placed_floor_count(self) -> int:
+        return sum(1 for row in self.world.tiles for tile in row if tile.floor)
+
+    def _placed_wall_count(self) -> int:
+        return sum(1 for row in self.world.tiles for tile in row if tile.feature in {"wooden_wall", "stone_wall", "wattle_wall", "wooden_door"})
 
     def _has_nearby_place_spot(self, agent: Agent, item_id: str) -> bool:
         if item_id not in PLACEABLE_ITEMS:
@@ -719,6 +954,8 @@ class Simulation:
         for dx, dy in CENTER_AND_NEIGHBORS:
             x, y = agent.x + dx, agent.y + dy
             if not self.world.in_bounds(x, y) or (x, y) in occupied:
+                continue
+            if self._would_choke_agent_with_wall(agent, x, y, item_id):
                 continue
             if self.world.can_place_station(x, y, item_id):
                 return True
@@ -844,7 +1081,11 @@ class Simulation:
         return not text.strip() or any(marker in text for marker in vague_markers)
 
     def _best_immediate_interaction(self, agent: Agent) -> dict[str, Any] | None:
-        options = [option for option in self._immediate_actions(agent) if option.get("available")]
+        options = [
+            option
+            for option in self._immediate_actions(agent)
+            if option.get("available") and not self._is_passive_option(option)
+        ]
         if not options:
             return None
         persona_priorities: dict[str, tuple[str, ...]] = {
@@ -950,6 +1191,17 @@ class Simulation:
                 agent.facing = (dx, dy)
                 agent.last_action = f"moved to {nx},{ny}"
                 return RoundEvent(agent.name, agent.last_action, "move")
+        for dx, dy in DIRECTIONS:
+            tx, ty = agent.x + dx, agent.y + dy
+            if not self.world.in_bounds(tx, ty):
+                continue
+            if self.world.tile(tx, ty).feature not in {"wooden_wall", "stone_wall", "wattle_wall"}:
+                continue
+            result = self.world.interact(agent, tx, ty)
+            loot = ", ".join(f"{count} {item_name(item)}" for item, count in result.loot.items()) or "nothing"
+            agent.facing = (dx, dy)
+            agent.last_action = f"{result.text}; got {loot}" if result.ok else result.text
+            return RoundEvent(agent.name, agent.last_action, "interact")
         agent.last_action = "could not find a move"
         return RoundEvent(agent.name, agent.last_action, "wait")
 
@@ -1044,13 +1296,15 @@ class Simulation:
             return RoundEvent(agent.name, agent.last_action, "place")
         placed = self.world.place_station(agent.x, agent.y, item_id)
         placed_nearby = False
-        if not placed and self._is_building_piece(item_id):
+        if not placed:
             occupied = {(other.x, other.y) for other in self.agents if other.health > 0}
             for dx, dy in CENTER_AND_NEIGHBORS:
                 if dx == 0 and dy == 0:
                     continue
                 x, y = agent.x + dx, agent.y + dy
                 if not self.world.in_bounds(x, y) or (x, y) in occupied:
+                    continue
+                if self._would_choke_agent_with_wall(agent, x, y, item_id):
                     continue
                 if self.world.place_station(x, y, item_id):
                     placed = True
@@ -1065,6 +1319,20 @@ class Simulation:
             return RoundEvent(agent.name, agent.last_action, "place")
         agent.last_action = "could not place that here"
         return RoundEvent(agent.name, agent.last_action, "place")
+
+    def _would_choke_agent_with_wall(self, agent: Agent, x: int, y: int, item_id: str) -> bool:
+        if item_id not in {"wooden_wall", "stone_wall", "wattle_wall"}:
+            return False
+        if max(abs(x - agent.x), abs(y - agent.y)) > 1:
+            return False
+        exits = 0
+        for dx, dy in DIRECTIONS:
+            nx, ny = agent.x + dx, agent.y + dy
+            if (nx, ny) == (x, y):
+                continue
+            if self.world.can_enter(agent, nx, ny):
+                exits += 1
+        return exits <= 1
 
     def _broadcast(self, agent: Agent, speech: str) -> None:
         agent.record_speech(self.round_index, speech)
@@ -1850,6 +2118,10 @@ class Simulation:
     def _fallback_decision(self, agent: Agent) -> Decision:
         if agent.hunger < 65 and any(ITEMS[item].food > 0 for item in agent.inventory):
             return Decision("eat", intent="eat from inventory", thought="I am hungry enough that food matters more than progress.")
+        if self._recent_craft_streak(agent) >= 2:
+            post_craft = self._post_craft_activity(agent, Decision())
+            if post_craft:
+                return post_craft
         recipe = self._best_known_craft(agent)
         if recipe:
             return Decision("craft", recipe_id=recipe.recipe_id, intent="craft known recipe", thought=f"I can make {recipe.name}, so I should use the chance.")
@@ -1864,6 +2136,8 @@ class Simulation:
                 tile = self.world.tile(tx, ty)
                 if tile.feature:
                     feature = FEATURES[tile.feature]
+                    if self._is_passive_feature(feature):
+                        continue
                     if feature.required_tool and not agent.best_tool(feature.required_tool, feature.min_power):
                         continue
                     return Decision("interact", target_dx=dx, target_dy=dy, intent="interact nearby", thought=f"That {feature.name} nearby looks useful enough to check first.")
@@ -1873,6 +2147,27 @@ class Simulation:
                 return Decision("interact", target_dx=dx, target_dy=dy, intent="gather terrain resource", thought="Even the ground might give me something basic to work with.")
         dx, dy = self.rng.choice(DIRECTIONS)
         return Decision("move", dx=dx, dy=dy, intent="offline movement", thought="I need a better spot before I can make a real plan.")
+
+    def _is_passive_feature_interaction(self, agent: Agent, decision: Decision) -> bool:
+        tx, ty = agent.x + decision.target_dx, agent.y + decision.target_dy
+        if not self.world.in_bounds(tx, ty):
+            return False
+        feature_id = self.world.tile(tx, ty).feature
+        if not feature_id:
+            return False
+        return self._is_passive_feature(FEATURES[feature_id])
+
+    @staticmethod
+    def _is_passive_option(option: dict[str, Any]) -> bool:
+        if option.get("target_type") != "feature":
+            return False
+        tags = set(option.get("tags", []))
+        return bool(tags & {"station", "storage", "container", "building", "wall", "rest", "shelter", "machine", "vehicle"}) and not option.get("expected_loot")
+
+    @staticmethod
+    def _is_passive_feature(feature: object) -> bool:
+        tags = set(feature.tags)
+        return bool(tags & {"station", "storage", "container", "building", "wall", "rest", "shelter", "machine", "vehicle"}) and not feature.loot
 
     @staticmethod
     def _fallback_thought(agent: Agent, decision: Decision) -> str:
