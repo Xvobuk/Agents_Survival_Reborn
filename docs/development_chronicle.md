@@ -2418,3 +2418,75 @@ Validation:
 Current read:
 
 The 99-resource test kit now produces a builder/explorer rhythm instead of a frozen crafting printer. It is still worth watching a real LLM run because model decisions can add new weirdness, but the deterministic safety rails now push agents away from inventory loops and toward visible world changes.
+
+## 2026-06-12 02:34 +03: Stronger Local Ollama Model And Longer Context
+
+Reason:
+
+The user suspected the current local model was too weak and asked to check disk space, install a stronger Ollama model, connect it to the game, and make agent context longer like a serious generative setup.
+
+Hardware and storage check:
+
+- GPU: NVIDIA GeForce RTX 3060 Ti with 8GB VRAM.
+- RAM: 16GB.
+- Free space before the model move/download:
+  - C: about 2.8GB free;
+  - F: about 24GB free.
+- Existing Ollama model store was under `C:\Users\vadim\.ollama\models`, which was too tight for larger models.
+
+Machine setup:
+
+- Stopped the running Ollama process.
+- Moved the Ollama model store to `F:\ollama_models`.
+- Created a Windows junction from `C:\Users\vadim\.ollama\models` to `F:\ollama_models`.
+- Restarted `ollama serve` in the background.
+- Verified `ollama list` still sees the old `qwen2.5:7b`.
+- Pulled `qwen2.5:14b` successfully.
+- Final installed local models:
+  - `qwen2.5:14b`, about 9.0GB;
+  - `qwen2.5:7b`, about 4.7GB.
+
+Implementation:
+
+- Changed the default native local/Ollama model from `llama3.1` to `qwen2.5:14b`.
+- Added explicit Ollama context-window support:
+  - `LLMConfig.num_ctx`;
+  - environment variable `AGENTS_SURVIVAL_NUM_CTX`;
+  - live-game CLI flag `--llm-num-ctx`;
+  - headless QA flag `--num-ctx`.
+- Passed `num_ctx` into Ollama `/api/chat` options when it is greater than zero.
+- Updated `tools/run_social_qa.py` to default to `qwen2.5:14b` with an 8192-token context window.
+- Increased retained simulation/social memory:
+  - chat history limit from 180 to 300;
+  - heard-memory limit from 16 to 48;
+  - private-memory limit from 16 to 64.
+- Fed more conversation context into each model decision:
+  - recent heard chat from 10 to 24 messages;
+  - new heard chat from 6 to 12 messages.
+- Preserved Gemini fallback settings when rebuilding mixed-provider config.
+- Updated README commands for the stronger 14B local profile and documented the speed tradeoff.
+
+Validation:
+
+- `python -m compileall agents_survival_reborn tools` passed after cleaning a stale Windows `.pyc` permission issue.
+- `python run.py --help` exposes `--llm-num-ctx`.
+- `python tools\run_social_qa.py --help` exposes `--num-ctx`.
+- Ran a real one-round Ollama QA call:
+  - command used `qwen2.5:14b`;
+  - context window 8192;
+  - one local agent;
+  - 240-second timeout;
+  - start kit `wood=10,stone=10,sticks=10,copper=10`.
+- The model returned a valid structured decision without fallback:
+  - `ok=1/1`;
+  - `fallback=0`;
+  - action was a real interaction;
+  - private memory updated naturally.
+- `ollama ps` confirmed:
+  - `qwen2.5:14b` loaded;
+  - context `8192`;
+  - processing split roughly across CPU/GPU.
+
+Current read:
+
+This is a meaningful quality upgrade, but not free. On this 8GB VRAM / 16GB RAM machine, the 14B model with 8192 context took about 160 seconds for one agent's decision in the smoke test. For watching the game live, the sane high-quality profile is 1-2 local Qwen agents with `--llm-workers 1`, high timeout, and long `--round-frames`. For more agents, use Gemini for some agents, lower local context to 4096/6144, or fall back to `qwen2.5:7b` for speed. A 32B-class model is likely too painful here unless disk/RAM/VRAM constraints change.

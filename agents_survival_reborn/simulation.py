@@ -1950,8 +1950,8 @@ class Simulation:
                 for recipe in known_recipes
             ],
             "immediate_actions": self._immediate_actions(agent),
-            "heard_chat": [self._chat_context_entry(agent, msg) for msg in heard_messages[-10:]],
-            "new_heard_chat": [self._chat_context_entry(agent, msg) for msg in new_heard_messages[-6:]],
+            "heard_chat": [self._chat_context_entry(agent, msg) for msg in heard_messages[-24:]],
+            "new_heard_chat": [self._chat_context_entry(agent, msg) for msg in new_heard_messages[-12:]],
             "communication": {
                 "chat_radius": CHAT_RADIUS,
                 "chat_cooldown": agent.chat_cooldown,

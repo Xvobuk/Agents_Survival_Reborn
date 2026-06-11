@@ -37,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-timeout", type=float, default=None, help="Seconds to wait for one model call.")
     parser.add_argument("--llm-workers", type=int, default=None, help="Concurrent model calls. Local Ollama usually likes 1.")
     parser.add_argument("--llm-max-output-tokens", type=int, default=None, help="Token budget for one model decision JSON.")
+    parser.add_argument("--llm-num-ctx", type=int, default=None, help="Ollama context window. Try 8192 for qwen2.5:14b; 0 uses model default.")
     parser.add_argument("--llm-retries", type=int, default=None, help="Retry count for transient hosted API errors such as Gemini 429.")
     parser.add_argument("--agents", type=int, default=AGENT_COUNT)
     parser.add_argument("--width", type=int, default=WORLD_WIDTH)
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.llama:
         provider = provider or "ollama"
         base_url = base_url or "http://localhost:11434"
-        model = model or "llama3.1"
+        model = model or "qwen2.5:14b"
         force_enabled = True
     if args.gemini_agents and args.gemini_agents > 0:
         force_enabled = True
@@ -78,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.llm_timeout,
         workers=args.llm_workers,
         max_output_tokens=args.llm_max_output_tokens,
+        num_ctx=args.llm_num_ctx,
         retry_count=args.llm_retries,
     )
     if args.gemini_agents is not None or args.gemini_model:
@@ -91,10 +93,12 @@ def main(argv: list[str] | None = None) -> int:
             workers=llm_config.workers,
             reasoning_effort=llm_config.reasoning_effort,
             max_output_tokens=llm_config.max_output_tokens,
+            num_ctx=llm_config.num_ctx,
             gemini_agent_count=max(0, args.gemini_agents if args.gemini_agents is not None else llm_config.gemini_agent_count),
             gemini_model=args.gemini_model or llm_config.gemini_model,
             gemini_api_key=llm_config.gemini_api_key,
             gemini_base_url=llm_config.gemini_base_url,
+            gemini_fallback_to_primary=llm_config.gemini_fallback_to_primary,
             retry_count=llm_config.retry_count,
         )
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, llm_config=llm_config)

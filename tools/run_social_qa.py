@@ -28,11 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=48)
     parser.add_argument("--height", type=int, default=36)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
-    parser.add_argument("--model", default="qwen2.5:7b")
+    parser.add_argument("--model", default="qwen2.5:14b")
     parser.add_argument("--provider", default="ollama")
     parser.add_argument("--base-url", default="http://localhost:11434")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--max-output-tokens", type=int, default=900)
+    parser.add_argument("--num-ctx", type=int, default=8192, help="Ollama context window. 0 uses model default.")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--llm-retries", type=int, default=2)
     parser.add_argument("--gemini-agents", type=int, default=0)
@@ -58,6 +59,7 @@ def main() -> int:
         timeout=args.timeout,
         workers=max(1, args.workers),
         max_output_tokens=args.max_output_tokens,
+        num_ctx=max(0, args.num_ctx),
         gemini_agent_count=max(0, args.gemini_agents),
         gemini_model=args.gemini_model,
         gemini_api_key=gemini_api_key,

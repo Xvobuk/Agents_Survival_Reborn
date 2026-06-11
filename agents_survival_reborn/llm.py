@@ -94,6 +94,7 @@ class LLMConfig:
     workers: int = 6
     reasoning_effort: str = "low"
     max_output_tokens: int = 500
+    num_ctx: int = 0
     gemini_agent_count: int = 0
     gemini_model: str = "gemini-2.5-flash"
     gemini_api_key: str = ""
@@ -113,6 +114,7 @@ class LLMConfig:
         timeout: float | None = None,
         workers: int | None = None,
         max_output_tokens: int | None = None,
+        num_ctx: int | None = None,
         retry_count: int | None = None,
     ) -> "LLMConfig":
         enabled = os.getenv("AGENTS_SURVIVAL_LLM", "").lower() in {"1", "true", "yes", "on"}
@@ -130,7 +132,7 @@ class LLMConfig:
         else:
             default_base_url = "https://api.openai.com/v1"
         if resolved_provider in LOCAL_PROVIDERS:
-            default_model = "llama3.1"
+            default_model = "qwen2.5:14b"
             default_workers = "1"
             default_timeout = "90"
             default_max_output = "900"
@@ -175,6 +177,7 @@ class LLMConfig:
             workers=max(1, workers or int(os.getenv("AGENTS_SURVIVAL_LLM_WORKERS", default_workers))),
             reasoning_effort=os.getenv("AGENTS_SURVIVAL_REASONING", "low"),
             max_output_tokens=max_output_tokens or int(os.getenv("AGENTS_SURVIVAL_MAX_OUTPUT_TOKENS", default_max_output)),
+            num_ctx=max(0, num_ctx if num_ctx is not None else int(os.getenv("AGENTS_SURVIVAL_NUM_CTX", "0"))),
             gemini_agent_count=gemini_agent_count,
             gemini_model=os.getenv("AGENTS_SURVIVAL_GEMINI_MODEL", "gemini-2.5-flash"),
             gemini_api_key=gemini_api_key,
@@ -320,6 +323,8 @@ class LLMDirector:
                 "num_predict": config.max_output_tokens,
             },
         }
+        if config.num_ctx > 0:
+            payload["options"]["num_ctx"] = config.num_ctx
         headers = {"Content-Type": "application/json"}
         request = self._json_request(f"{config.base_url}/api/chat", payload, headers)
         try:

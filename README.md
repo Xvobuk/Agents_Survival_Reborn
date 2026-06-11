@@ -22,13 +22,16 @@ Offline mode is only a smoke-test fallback. For actual generative agents:
 Local model through Ollama:
 
 ```powershell
-ollama pull llama3.1
+ollama pull qwen2.5:14b
 ollama serve
-python run.py --llama --model llama3.1
+python run.py --llama --model qwen2.5:14b --llm-num-ctx 8192 --agents 2 --llm-workers 1 --llm-timeout 240 --llm-max-output-tokens 900 --round-frames 120
 ```
 
 If Ollama is already running, `ollama serve` can print a port-in-use error.
 That is fine; use the exact model name from `ollama list`.
+`qwen2.5:14b` gives better decisions than the old 7B default, but it is much
+slower on an 8GB GPU. Use 1-2 local agents first, or lower `--llm-num-ctx` to
+4096/6144 when you want faster visible turns.
 
 Local model through LM Studio or another OpenAI-compatible server:
 
@@ -54,7 +57,7 @@ Mixed local Qwen/Ollama plus Gemini:
 
 ```powershell
 $env:GEMINI_API_KEY="your-gemini-key"
-python run.py --llama --model qwen2.5:7b --agents 8 --gemini-agents 3 --round-frames 60 --llm-workers 4 --llm-timeout 90 --llm-max-output-tokens 900
+python run.py --llama --model qwen2.5:14b --llm-num-ctx 8192 --agents 4 --gemini-agents 2 --round-frames 120 --llm-workers 2 --llm-timeout 240 --llm-max-output-tokens 900
 ```
 
 In mixed mode, the first `--gemini-agents` agents are routed through Gemini and
@@ -66,7 +69,7 @@ Live 2 Qwen + 2 Gemini comparison with a starting kit:
 
 ```powershell
 $env:GEMINI_API_KEY="your-gemini-key"
-python run.py --llama --model qwen2.5:7b --agents 4 --gemini-agents 2 --llm-workers 1 --llm-timeout 120 --llm-retries 2 --llm-max-output-tokens 900 --round-frames 30 --max-rounds 200 --start-items pine_log=10,stone=10,stick=10,copper_ore=10
+python run.py --llama --model qwen2.5:14b --llm-num-ctx 8192 --agents 4 --gemini-agents 2 --llm-workers 1 --llm-timeout 240 --llm-retries 2 --llm-max-output-tokens 900 --round-frames 120 --max-rounds 200 --start-items pine_log=10,stone=10,stick=10,copper_ore=10
 ```
 
 `--max-rounds 200` pauses the live simulation after 200 completed rounds so you
@@ -84,7 +87,7 @@ python run.py --asset-wizard
 For local models, start small:
 
 ```powershell
-python run.py --llama --model qwen2.5:7b --agents 2 --round-frames 60 --llm-workers 1 --llm-timeout 90 --llm-max-output-tokens 900 --no-record
+python run.py --llama --model qwen2.5:14b --llm-num-ctx 8192 --agents 2 --round-frames 120 --llm-workers 1 --llm-timeout 240 --llm-max-output-tokens 900 --no-record
 ```
 
 Every visible round asks every agent for a decision. Local models can be much
@@ -100,21 +103,21 @@ the model response; unrecoverable raw output is written to
 Headless social QA:
 
 ```powershell
-python tools\run_social_qa.py --rounds 8 --agents 3 --cluster --model qwen2.5:7b
+python tools\run_social_qa.py --rounds 5 --agents 1 --cluster --model qwen2.5:14b --num-ctx 8192 --workers 1 --timeout 240
 ```
 
 Mixed Qwen/Gemini social QA:
 
 ```powershell
 $env:GEMINI_API_KEY="your-gemini-key"
-python tools\run_social_qa.py --rounds 4 --agents 4 --cluster --model qwen2.5:7b --gemini-agents 2 --workers 4 --timeout 90
+python tools\run_social_qa.py --rounds 4 --agents 4 --cluster --model qwen2.5:14b --num-ctx 8192 --gemini-agents 2 --workers 2 --timeout 240
 ```
 
 Mixed Qwen/Gemini long tech-progression QA with a starting kit:
 
 ```powershell
 $env:GEMINI_API_KEY="your-gemini-key"
-python tools\run_social_qa.py --rounds 200 --agents 4 --mixed-biome --model qwen2.5:7b --gemini-agents 2 --workers 1 --timeout 120 --llm-retries 2 --max-output-tokens 900 --start-items pine_log=10,stone=10,stick=10,copper_ore=10 --summary-json logs\mixed_qwen_gemini_200_summary.json
+python tools\run_social_qa.py --rounds 200 --agents 4 --mixed-biome --model qwen2.5:14b --num-ctx 8192 --gemini-agents 2 --workers 1 --timeout 240 --llm-retries 2 --max-output-tokens 900 --start-items pine_log=10,stone=10,stick=10,copper_ore=10 --summary-json logs\mixed_qwen_gemini_200_summary.json
 ```
 
 `--start-items` grants the listed `item_id=count` kit to every agent after
