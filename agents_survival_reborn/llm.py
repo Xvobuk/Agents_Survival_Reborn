@@ -68,6 +68,12 @@ GEMINI_PROVIDERS = {"gemini", "google"}
 LOCAL_PROVIDERS = OLLAMA_PROVIDERS | COMPATIBLE_PROVIDERS
 
 
+class DecisionParseError(RuntimeError):
+    def __init__(self, message: str, *, truncated: bool = False) -> None:
+        super().__init__(message)
+        self.truncated = truncated
+
+
 @dataclass(frozen=True)
 class Decision:
     action: str = "wait"
@@ -268,7 +274,7 @@ class LLMDirector:
 
     def _decide_with_route(self, context: dict[str, Any], route_config: LLMConfig) -> tuple[Decision, str]:
         try:
-            return self._decide_one(context, route_config), ""
+            return self._decide_one_with_parse_retry(context, route_config), ""
         except Exception as exc:
             if (
                 route_config.provider in GEMINI_PROVIDERS
@@ -276,8 +282,19 @@ class LLMDirector:
                 and self.config.gemini_fallback_to_primary
             ):
                 fallback_error = f"Gemini failed; used {self.config.provider}: {exc}"
-                return self._decide_one(context, self.config), fallback_error
+                return self._decide_one_with_parse_retry(context, self.config), fallback_error
             raise
+
+    def _decide_one_with_parse_retry(self, context: dict[str, Any], config: LLMConfig) -> Decision:
+        attempts = 1 + (1 if config.retry_count > 0 else 0)
+        for attempt in range(attempts):
+            try:
+                return self._decide_one(context, config)
+            except DecisionParseError as exc:
+                if not exc.truncated or attempt >= attempts - 1:
+                    raise
+                time.sleep(0.2)
+        raise RuntimeError("unreachable decision retry state")
 
     def _decide_openai_responses(self, context: dict[str, Any], config: LLMConfig) -> Decision:
         payload = {
@@ -508,13 +525,17 @@ class LLMDirector:
 
     def _parse_decision_text(self, text: str) -> Decision:
         self.last_raw_response = text
-        raw = _extract_json_object(text)
+        try:
+            raw = _extract_json_object(text)
+        except ValueError as exc:
+            self._write_last_raw_response(text)
+            raise DecisionParseError(f"{exc}; raw saved to docs/last_llm_response.txt", truncated=_looks_truncated_json(text)) from exc
         try:
             return self._parse_decision(json.loads(raw))
         except (json.JSONDecodeError, ValueError) as exc:
             self._write_last_raw_response(text)
             if not isinstance(exc, json.JSONDecodeError):
-                raise RuntimeError(f"{exc}; raw saved to docs/last_llm_response.txt") from exc
+                raise DecisionParseError(f"{exc}; raw saved to docs/last_llm_response.txt") from exc
             repaired = _repair_json_text(raw)
             if repaired != raw:
                 try:
@@ -524,7 +545,9 @@ class LLMDirector:
             scanned = _scan_decision_fields(raw)
             if scanned:
                 return self._parse_decision(scanned)
-            raise RuntimeError(f"model returned malformed JSON: {exc.msg} at char {exc.pos}; raw saved to docs/last_llm_response.txt") from exc
+            truncated = _looks_truncated_json(raw)
+            reason = "truncated JSON" if truncated else "malformed JSON"
+            raise DecisionParseError(f"model returned {reason}: {exc.msg} at char {exc.pos}; raw saved to docs/last_llm_response.txt", truncated=truncated) from exc
 
     @staticmethod
     def _write_last_raw_response(text: str) -> None:
@@ -637,6 +660,34 @@ def _repair_json_text(text: str) -> str:
     if depth > 0:
         repaired += "}" * depth
     return repaired
+
+
+def _looks_truncated_json(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if len(stripped) < 12:
+        return True
+    if stripped in {'{', '{"', '{"}', '```json', '```'}:
+        return True
+    if '"action"' not in stripped and _brace_depth(stripped) > 0:
+        return True
+    if _brace_depth(stripped) > 0:
+        return True
+    return _ends_inside_json_string(stripped)
+
+
+def _ends_inside_json_string(text: str) -> bool:
+    in_string = False
+    escape = False
+    for char in text:
+        if escape:
+            escape = False
+        elif char == "\\":
+            escape = True
+        elif char == '"':
+            in_string = not in_string
+    return in_string or escape
 
 
 def _scan_decision_fields(text: str) -> dict[str, Any]:

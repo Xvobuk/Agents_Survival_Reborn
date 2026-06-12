@@ -2527,3 +2527,30 @@ Validation:
 Current read:
 
 This should make the sandbox much easier to inspect. The viewer can now pause, select an agent, open the book, and see exactly which crafting path exists, which parts the selected agent has, and where the blocker is. The next useful polish pass would be adding a text search box if the recipe count becomes too awkward for category browsing.
+
+## 2026-06-12 03:29 +03: Retry Truncated Qwen JSON
+
+Reason:
+
+The user shared `docs/last_llm_response.txt` containing only `{"`. This is not a merely malformed decision; it is an obviously truncated local-model response, probably from a generation/runtime hiccup.
+
+Implementation:
+
+- Added `DecisionParseError` with a `truncated` flag.
+- Changed decision parsing so malformed map/decision errors still fail normally, but clearly incomplete JSON is marked as truncated.
+- Added a one-shot retry wrapper around provider decisions when the parse failure is truncated and `retry_count > 0`.
+- Kept existing repair and field-scan behavior for normal malformed JSON.
+- The retry path also applies after Gemini-to-primary fallback, so provider routing stays consistent.
+
+Validation:
+
+- `python -m compileall agents_survival_reborn tools` passed.
+- Parser smoke test:
+  - valid decision JSON parsed as `wait`;
+  - `{"` was classified as truncated;
+  - empty raw text was classified as truncated.
+- Retry smoke test forced a truncated parse error on the first call and confirmed the second call succeeded.
+
+Current read:
+
+This should reduce visible `LLM error` spikes from one-off Qwen output cutoffs without pretending that `{"` contains a real action. If the model repeatedly truncates, the existing fallback behavior still takes over after the retry.
