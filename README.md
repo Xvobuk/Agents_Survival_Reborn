@@ -190,9 +190,23 @@ To generate the whole sprite set as one ChatGPT image:
 python tools\make_sprite_atlas_prompt.py
 ```
 
-The generated prompt currently asks for a `12x11` atlas, enough for the expanded
-sprite manifest. Paste that prompt into ChatGPT image generation, save the result as
-`assets/generated/chatgpt_sprite_atlas.png`, then slice it:
+The old one-image atlas route is fragile for the expanded sprite manifest. The
+preferred route is now several smaller `8x8` ChatGPT batches:
+
+```powershell
+python tools\make_sprite_batch_prompts.py
+```
+
+Copy prompts from `docs/sprite_batch_prompts.md`, save each generated PNG into
+`assets/generated/`, then import one batch like this:
+
+```powershell
+python tools\import_sprite_batch_atlas.py 01_terrain_and_nature_features assets\generated\01_terrain_and_nature_features.png --replace-existing --preview
+```
+
+The older single-atlas prompt asks for one large atlas. Paste that prompt into
+ChatGPT image generation, save the result as `assets/generated/chatgpt_sprite_atlas.png`,
+then slice it:
 
 ```powershell
 python tools\import_sprite_atlas.py assets\generated\chatgpt_sprite_atlas.png --replace-existing --preview

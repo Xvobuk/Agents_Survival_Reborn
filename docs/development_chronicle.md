@@ -2554,3 +2554,31 @@ Validation:
 Current read:
 
 This should reduce visible `LLM error` spikes from one-off Qwen output cutoffs without pretending that `{"` contains a real action. If the model repeatedly truncates, the existing fallback behavior still takes over after the retry.
+
+## 2026-06-12 03:43 +03: Sprite Batch Prompt Pipeline
+
+Reason:
+
+The user asked for a list of sprites to generate and a stronger ChatGPT prompt, preferably split into several generated files instead of forcing one giant atlas.
+
+Implementation:
+
+- Added `tools/make_sprite_batch_prompts.py`.
+- The new prompt generator reads the live `sprite_specs()` manifest and writes `docs/sprite_batch_prompts.md`.
+- Split the current 399-sprite manifest into eight `8x8` atlas batches:
+  - terrain and nature features;
+  - ore/plants/deposits;
+  - structures, agents, and UI;
+  - five item batches.
+- Added validation so prompt generation fails if a sprite is missing, duplicated, or a batch exceeds 64 cells.
+- Added `tools/import_sprite_batch_atlas.py` to slice a single generated batch PNG into the matching sprite files.
+- Updated README to prefer batch atlases over the old single-atlas prompt.
+
+Validation:
+
+- `python tools\make_sprite_batch_prompts.py` generated `docs/sprite_batch_prompts.md`.
+- `python -m compileall agents_survival_reborn tools` passed.
+
+Current read:
+
+The game currently has all sprite filenames present, but this gives us a cleaner path to replace placeholder or rough generated art without overloading ChatGPT with a 399-object mega-image.
