@@ -2659,3 +2659,27 @@ Validation:
 Current read:
 
 The importer now uses the grid as a search scaffold and the actual painted alpha as the final crop boundary for objects, mobs, agents, UI, and items. This should fix the “everything inside the grid became the sprite” look while preserving proper full-cell terrain tiles.
+
+## 2026-06-12 23:45 +03: Ollama Truncated First-Turn Recovery
+
+Reason:
+
+The user hit a first-turn local-model failure where Qwen/Ollama returned only `{"`, causing `model returned truncated JSON: Unterminated string starting at char 1`. This is too short to salvage into an action and was happening before the agents could do anything useful.
+
+Implementation:
+
+- Fixed retry accounting in `LLMDirector._decide_one_with_parse_retry` so `--llm-retries 2` means two retries after the initial attempt instead of only one retry total.
+- Added an Ollama-specific recovery path:
+  - first try the native structured schema request as before;
+  - if parsing says the response is truncated, retry that same decision once through Ollama's simpler `format=json` mode;
+  - if that also fails, the normal retry loop can still try the full request again.
+- Kept malformed non-truncated JSON strict, because those cases may contain bad fields or hallucinated map data that should not be silently accepted.
+
+Validation:
+
+- Verified the saved raw response was exactly the two-character truncation case.
+- `python -m compileall agents_survival_reborn tools` passed.
+
+Current read:
+
+This should stop one-off Ollama schema-mode hiccups from immediately turning the first round into a visible `LLM error`, while still surfacing real persistent model failures.

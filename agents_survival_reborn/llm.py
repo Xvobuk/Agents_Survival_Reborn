@@ -286,7 +286,7 @@ class LLMDirector:
             raise
 
     def _decide_one_with_parse_retry(self, context: dict[str, Any], config: LLMConfig) -> Decision:
-        attempts = 1 + (1 if config.retry_count > 0 else 0)
+        attempts = 1 + max(0, config.retry_count)
         for attempt in range(attempts):
             try:
                 return self._decide_one(context, config)
@@ -353,7 +353,25 @@ class LLMDirector:
             request = self._json_request(f"{config.base_url}/api/chat", payload, headers)
             data = self._send_json(request, config.timeout)
         text = data["message"]["content"]
-        return self._parse_decision_text(text)
+        try:
+            return self._parse_decision_text(text)
+        except DecisionParseError as exc:
+            if not exc.truncated or payload.get("format") == "json":
+                raise
+            fallback_payload = dict(payload)
+            fallback_payload["format"] = "json"
+            fallback_payload["messages"] = [
+                payload["messages"][0],
+                {
+                    "role": "user",
+                    "content": self._local_user_prompt(context)
+                    + "\nThe previous structured response was truncated. Return one complete DECISION_JSON object now.",
+                },
+            ]
+            request = self._json_request(f"{config.base_url}/api/chat", fallback_payload, headers)
+            data = self._send_json(request, config.timeout)
+            text = data["message"]["content"]
+            return self._parse_decision_text(text)
 
     def _decide_chat_compatible(self, context: dict[str, Any], config: LLMConfig) -> Decision:
         payload = {
