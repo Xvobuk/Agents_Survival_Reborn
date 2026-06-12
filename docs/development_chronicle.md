@@ -2626,3 +2626,36 @@ Validation:
 Current read:
 
 The first six atlas batches are now active in the game and the visual jump is substantial. Some recipe-book entries still show older placeholder-like art because batches 07 and 08 have not been generated/imported yet, especially late lighting/navigation/food and medicine/station items.
+
+## 2026-06-12 23:15 +03: Corrected Batch Sprite Cropping
+
+Reason:
+
+The user noticed that the imported ChatGPT batch sprites were still visibly shifted. The mistake was conceptual: the importer was treating the grid cell as the sprite boundary too strongly. For generated atlases, the grid is only a rough place to look; non-terrain sprites need to be cropped by the actual painted object edges after chroma removal.
+
+Implementation:
+
+- Updated `tools/import_sprite_batch_atlas.py` so the default batch import mode detects ChatGPT's inner grid instead of assuming the whole image is a perfect 8x8 canvas.
+- Cell boundaries are now inferred from detected row/column centers, which keeps neighboring sprites from bleeding into each other even when the generated atlas has margins or uneven outer padding.
+- The detected cell is then passed through the existing non-terrain sprite pipeline:
+  - remove the magenta chroma background;
+  - remove magenta fringe artifacts;
+  - crop by the alpha bounding box of the real sprite silhouette;
+  - fit the result into the final icon size.
+- Terrain sprites still preserve full tile coverage, because grass/water/coast/rock tiles should fill their square instead of becoming centered icons.
+- Reimported batches 01-06 with `--replace-existing --preview`.
+
+Validation:
+
+- Reimported 319 sprites from the first six generated atlases.
+- Generated a focused spot-check sheet at `assets/generated/crop_fix_spotcheck.png`.
+- Sprite sanity check found:
+  - no missing sprite files;
+  - no wrong-size sprites;
+  - no blank sprites;
+  - no opaque magenta leftovers in non-terrain sprites.
+- `python -m compileall agents_survival_reborn tools` passed.
+
+Current read:
+
+The importer now uses the grid as a search scaffold and the actual painted alpha as the final crop boundary for objects, mobs, agents, UI, and items. This should fix the “everything inside the grid became the sprite” look while preserving proper full-cell terrain tiles.
