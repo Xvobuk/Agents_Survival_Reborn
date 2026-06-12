@@ -100,6 +100,65 @@ If the HUD reports malformed JSON, the parser will try to repair or field-scan
 the model response; unrecoverable raw output is written to
 `docs/last_llm_response.txt`.
 
+### Codex-Control Mode
+
+This mode is for a clean "Codex plays the game" run. No Ollama, Gemini, hosted
+LLM, or fallback autopilot chooses actions. The PyGame window writes each
+controlled survivor's observation to disk and waits until that survivor's Codex
+session writes a decision file.
+
+Start a two-survivor Codex party:
+
+```powershell
+cd F:\python_projects\agents_survival_reborn
+python run.py --codex-control --agents 2 --round-frames 30 --autosave-rounds 1 --save-path saves\codex_party.json --start-items pine_log=20,stone=20,stick=20,plank=20,copper_ore=20,copper_ingot=20,iron_ore=20,iron_ingot=20,coal=20,flint=20,leather=20,cloth=20,rope_coil=20,raw_meat=20,raw_fish=20
+```
+
+The game creates:
+
+```text
+codex_control\
+  current_round.json
+  agent_0_Aiden\
+    CODEX_PLAYER_PROMPT.md
+    latest_observation.json
+    observation_round_000000.json
+    decision_round_000000.json   <- write this
+  agent_1_Mira\
+    CODEX_PLAYER_PROMPT.md
+    latest_observation.json
+    observation_round_000000.json
+    decision_round_000000.json   <- write this
+```
+
+Each Codex session should read only its own `CODEX_PLAYER_PROMPT.md` and
+`latest_observation.json`, then write the matching `decision_round_XXXXXX.json`.
+Example decision:
+
+```json
+{
+  "round": 0,
+  "action": "move",
+  "dx": 1,
+  "dy": 0,
+  "target_dx": 0,
+  "target_dy": 0,
+  "recipe_id": "",
+  "place_item": "",
+  "speech": "",
+  "private_memory": "I saw trees and want wood before station work.",
+  "intent": "move toward visible wood",
+  "thought": "I need a better first resource lead before spending the starter kit."
+}
+```
+
+Use `S` in the game window to save manually. `--autosave-rounds 1` writes
+`saves\codex_party.json` after every completed round. Continue later with:
+
+```powershell
+python run.py --codex-control --agents 2 --load-save saves\codex_party.json --save-path saves\codex_party.json
+```
+
 Headless social QA:
 
 ```powershell

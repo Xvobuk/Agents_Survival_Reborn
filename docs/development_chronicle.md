@@ -2683,3 +2683,47 @@ Validation:
 Current read:
 
 This should stop one-off Ollama schema-mode hiccups from immediately turning the first round into a visible `LLM error`, while still surfacing real persistent model failures.
+
+## 2026-06-13 00:20 +03: Codex-Control Party Mode And Saves
+
+Reason:
+
+The user proposed a deliberately strange and interesting mode: two separate Codex sessions should literally play the game, with each session responsible for exactly one survivor. The run must be clean: no Ollama/Gemini substitution and no deterministic fallback autopilot making decisions when a Codex player has not acted yet. The game also needs saves so the Codex-played party can stop and continue later.
+
+Implementation:
+
+- Added `agents_survival_reborn/savegame.py`.
+- Save files now capture:
+  - world dimensions, seed, terrain, features, floors, hp, shade, and world RNG state;
+  - simulation round, seed, and simulation RNG state;
+  - each agent's persona, position, facing, inventory, durability, food quality, equipment, rings, known recipes, private memory, heard chat, recent actions, recent speech, recent thoughts, needs, cooldowns, and last status fields;
+  - visible chat history.
+- Added `agents_survival_reborn/codex_control.py`.
+- New Codex-control protocol:
+  - the game writes per-agent folders under `codex_control`;
+  - each folder gets `CODEX_PLAYER_PROMPT.md`, `latest_observation.json`, and `observation_round_XXXXXX.json`;
+  - each Codex session writes only its own `decision_round_XXXXXX.json`;
+  - the game waits until every living controlled agent has a valid decision file.
+- Added CLI options:
+  - `--codex-control`;
+  - `--control-dir`;
+  - `--load-save`;
+  - `--save-path`;
+  - `--autosave-rounds`.
+- Added manual save hotkey `S`.
+- Updated README with the two-Codex-player launch command, folder layout, decision JSON example, and resume command.
+
+Validation:
+
+- Smoke-tested an external-control round with two agents:
+  - created observations;
+  - wrote two decision files;
+  - controller accepted both;
+  - simulation applied the decisions;
+  - save file was written;
+  - a fresh simulation loaded the save with the same round, agent count, and world dimensions.
+- `python -m compileall agents_survival_reborn tools` passed.
+
+Current read:
+
+This gives the project a true human/Codex play mode. While `--codex-control` is active, the game does not ask local or hosted models for decisions and does not advance the round until the per-agent Codex sessions have supplied valid files. Autosave after every round makes the experiment survivable even if the Codex players need to pause.

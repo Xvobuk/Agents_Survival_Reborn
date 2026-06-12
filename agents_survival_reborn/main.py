@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import Future
+from pathlib import Path
 from threading import Thread
 
 import pygame
@@ -18,8 +19,10 @@ from .constants import (
     WORLD_HEIGHT,
     WORLD_WIDTH,
 )
+from .codex_control import CodexControl
 from .llm import Decision, LLMConfig
 from .renderer import Camera, RecipeBookState, Renderer
+from .savegame import load_simulation, save_simulation
 from .simulation import Simulation
 from .start_items import parse_start_items
 
@@ -45,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--round-frames", type=int, default=ROUND_FRAMES)
     parser.add_argument("--max-rounds", type=int, default=0, help="Pause live simulation after this many completed rounds. 0 means unlimited.")
     parser.add_argument("--start-items", default="", help="Comma-separated item=count kit granted to every agent at spawn.")
+    parser.add_argument("--load-save", type=Path, default=None, help="Load a saved game JSON before starting.")
+    parser.add_argument("--save-path", type=Path, default=Path("saves") / "autosave.json", help="Save file used by S and autosave.")
+    parser.add_argument("--autosave-rounds", type=int, default=1, help="Autosave every N completed rounds. 0 disables autosave.")
+    parser.add_argument("--codex-control", action="store_true", help="Wait for per-agent Codex decision files instead of model/autopilot decisions.")
+    parser.add_argument("--control-dir", type=Path, default=Path("codex_control"), help="Folder for Codex observation/decision files.")
     parser.add_argument("--asset-wizard", action="store_true", help="Ask for missing sprite files before launch.")
     parser.add_argument("--no-record", action="store_true", help="Deprecated: screen videos are no longer recorded; replay JSONL is always written.")
     return parser
@@ -101,7 +109,11 @@ def main(argv: list[str] | None = None) -> int:
             gemini_fallback_to_primary=llm_config.gemini_fallback_to_primary,
             retry_count=llm_config.retry_count,
         )
+    if args.codex_control:
+        llm_config = LLMConfig(enabled=False, model="codex-control", api_key="", provider="codex")
     sim = Simulation(width=args.width, height=args.height, agent_count=args.agents, llm_config=llm_config)
+    if args.load_save:
+        load_simulation(sim, args.load_save)
     try:
         start_items = parse_start_items(args.start_items)
     except ValueError as exc:
@@ -116,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
     pending_round: Future[dict[int, Decision]] | None = None
     replay_status = f"replay {sim.logger.replay_path.name}"
     recipe_book = RecipeBookState()
+    codex_control = CodexControl(args.control_dir) if args.codex_control else None
+    save_status = f"save {args.save_path}"
 
     running = True
     try:
@@ -141,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
                         camera.follow = not camera.follow
                     elif event.key == pygame.K_r:
                         replay_status = f"replay {sim.logger.replay_path.name}"
+                    elif event.key == pygame.K_s:
+                        path = save_simulation(sim, args.save_path)
+                        save_status = f"saved {path}"
                     elif recipe_book.open:
                         renderer.handle_recipe_book_key(recipe_book, event.key)
                 elif recipe_book.open and event.type == pygame.MOUSEWHEEL:
@@ -155,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
                     sim.llm.last_error = str(exc)
                     decisions = {}
                 sim.apply_round_decisions(decisions)
+                if args.autosave_rounds > 0 and sim.round_index % args.autosave_rounds == 0:
+                    path = save_simulation(sim, args.save_path)
+                    save_status = f"autosaved {path}"
                 sim.round_thinking = False
                 pending_round = None
                 frames_since_round = 0
@@ -167,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
                 elif frames_since_round >= max(1, args.round_frames):
                     contexts = sim.prepare_round_contexts()
                     sim.round_thinking = True
-                    pending_round = _start_round_worker(sim, contexts)
+                    pending_round = _start_round_worker(sim, contexts, codex_control)
                     progress = 1.0
                 else:
                     progress = min(1.0, frames_since_round / max(1, args.round_frames))
@@ -175,19 +195,26 @@ def main(argv: list[str] | None = None) -> int:
                 progress = 1.0
             elif paused:
                 progress = min(1.0, frames_since_round / max(1, args.round_frames))
-            renderer.draw(screen, sim, camera, selected, progress, replay_status, paused, recipe_book=recipe_book)
+            visible_status = replay_status
+            if codex_control:
+                visible_status = f"{replay_status} | {codex_control.status} | {save_status}"
+            renderer.draw(screen, sim, camera, selected, progress, visible_status, paused, recipe_book=recipe_book)
             pygame.display.flip()
     finally:
+        save_simulation(sim, args.save_path)
         pygame.quit()
     return 0
 
 
-def _start_round_worker(sim: Simulation, contexts: dict[int, dict[str, object]]) -> Future[dict[int, Decision]]:
+def _start_round_worker(sim: Simulation, contexts: dict[int, dict[str, object]], codex_control: CodexControl | None = None) -> Future[dict[int, Decision]]:
     future: Future[dict[int, Decision]] = Future()
 
     def run() -> None:
         try:
-            future.set_result(sim.llm.decide_all(contexts))
+            if codex_control:
+                future.set_result(codex_control.decide_all(sim, contexts))
+            else:
+                future.set_result(sim.llm.decide_all(contexts))
         except BaseException as exc:
             future.set_exception(exc)
 

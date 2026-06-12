@@ -7,6 +7,8 @@ GENERATED_DIR = ASSET_DIR / "generated"
 DOCS_DIR = ROOT_DIR / "docs"
 VIDEO_DIR = ROOT_DIR / "gameplay_videos"
 LOG_DIR = ROOT_DIR / "logs"
+SAVE_DIR = ROOT_DIR / "saves"
+CODEX_CONTROL_DIR = ROOT_DIR / "codex_control"
 
 SCREEN_WIDTH = 1440
 SCREEN_HEIGHT = 900
