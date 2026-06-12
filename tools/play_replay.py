@@ -16,7 +16,7 @@ import pygame
 from agents_survival_reborn.assets import AssetManager
 from agents_survival_reborn.constants import FPS, HUD_WIDTH, LOG_DIR, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_SIZE
 from agents_survival_reborn.data import FEATURES, TERRAINS
-from agents_survival_reborn.renderer import Camera, Renderer
+from agents_survival_reborn.renderer import Camera, RecipeBookState, Renderer
 from agents_survival_reborn.world import Tile
 
 
@@ -52,6 +52,7 @@ def main() -> int:
     paused = False
     frame_pos = 0.0
     speed = max(0.1, args.speed)
+    recipe_book = RecipeBookState()
 
     running = True
     try:
@@ -62,7 +63,12 @@ def main() -> int:
                     running = False
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        running = False
+                        if recipe_book.open:
+                            recipe_book.open = False
+                        else:
+                            running = False
+                    elif event.key == pygame.K_b:
+                        recipe_book.open = not recipe_book.open
                     elif event.key == pygame.K_SPACE:
                         paused = not paused
                     elif event.key == pygame.K_TAB:
@@ -78,6 +84,12 @@ def main() -> int:
                         frame_pos = min(float(len(frames) - 1), frame_pos + 1)
                     elif event.key == pygame.K_f:
                         camera.follow = not camera.follow
+                    elif recipe_book.open:
+                        renderer.handle_recipe_book_key(recipe_book, event.key)
+                elif recipe_book.open and event.type == pygame.MOUSEWHEEL:
+                    recipe_book.scroll = max(0, recipe_book.scroll - event.y)
+                elif recipe_book.open and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    renderer.handle_recipe_book_click(recipe_book, event.pos)
             if not paused:
                 frame_pos = min(float(len(frames) - 1), frame_pos + dt * speed * 2.0)
             frame_index = int(frame_pos)
@@ -86,7 +98,7 @@ def main() -> int:
             if sim.agents:
                 selected %= len(sim.agents)
             move_camera(camera, sim, selected, dt)
-            renderer.draw(screen, sim, camera, selected, progress, f"{session.name} x{speed:.1f}", paused)
+            renderer.draw(screen, sim, camera, selected, progress, f"{session.name} x{speed:.1f}", paused, recipe_book=recipe_book)
             pygame.display.flip()
     finally:
         pygame.quit()
@@ -152,6 +164,7 @@ def make_replay_sim(world_data: dict[str, Any], frame: dict[str, Any], session: 
                 tool_durability={},
                 food_quality={},
                 inventory=inventory,
+                known_recipes=set(entry.get("known_recipes", [])),
                 used_inventory_slots=entry.get("used_inventory_slots", len(inventory)),
                 inventory_slot_limit=entry.get("inventory_slot_limit", 15),
                 last_action=entry.get("last_action", ""),

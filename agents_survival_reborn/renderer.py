@@ -7,7 +7,26 @@ import pygame
 
 from .assets import AssetManager
 from .constants import HUD_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_SIZE
-from .data import FEATURES, ITEMS, PLACEABLE_ITEMS, TERRAINS, item_name
+from .data import FEATURES, ITEMS, PLACEABLE_ITEMS, RECIPES, TERRAINS, Ingredient, RecipeDef, item_name
+
+
+RECIPE_CATEGORIES = (
+    "All",
+    "Survival",
+    "Stations",
+    "Building",
+    "Tools",
+    "Weapons",
+    "Food",
+    "Metal",
+    "Armor",
+    "Jewelry",
+    "Alchemy",
+    "Farming",
+    "Medicine",
+    "Navigation",
+    "Other",
+)
 
 
 @dataclass
@@ -21,6 +40,14 @@ class Camera:
         self.y = max(0, min(self.y, sim.world.height * TILE_SIZE - viewport[1]))
 
 
+@dataclass
+class RecipeBookState:
+    open: bool = False
+    category: str = "All"
+    scroll: int = 0
+    selected_recipe_id: str = ""
+
+
 class Renderer:
     def __init__(self, assets: AssetManager) -> None:
         self.assets = assets
@@ -28,16 +55,60 @@ class Renderer:
         self.font = pygame.font.SysFont("segoeui", 15) or pygame.font.Font(None, 15)
         self.small = pygame.font.SysFont("consolas", 12) or pygame.font.Font(None, 12)
         self.title = pygame.font.SysFont("segoeui", 22, bold=True) or pygame.font.Font(None, 22)
+        self.subtitle = pygame.font.SysFont("segoeui", 17, bold=True) or pygame.font.Font(None, 17)
+        self._recipe_category_rects: dict[str, pygame.Rect] = {}
+        self._recipe_row_rects: dict[str, pygame.Rect] = {}
 
-    def draw(self, screen: pygame.Surface, sim: object, camera: Camera, selected: int, progress: float, recorder_status: str, paused: bool, mouse_pos: tuple[int, int] | None = None) -> None:
+    def draw(
+        self,
+        screen: pygame.Surface,
+        sim: object,
+        camera: Camera,
+        selected: int,
+        progress: float,
+        recorder_status: str,
+        paused: bool,
+        mouse_pos: tuple[int, int] | None = None,
+        recipe_book: RecipeBookState | None = None,
+    ) -> None:
         mouse_pos = mouse_pos or pygame.mouse.get_pos()
         screen.fill((10, 12, 15))
         world_view = pygame.Rect(0, 0, screen.get_width() - HUD_WIDTH, screen.get_height())
         world_tooltip = self._world(screen, sim, camera, world_view, selected, progress, mouse_pos)
         hud_tooltip = self._hud(screen, sim, selected, recorder_status, paused, mouse_pos)
         tooltip = hud_tooltip or world_tooltip
+        if recipe_book and recipe_book.open:
+            tooltip = self._recipe_book(screen, sim, selected, recipe_book, mouse_pos)
         if tooltip:
             self._tooltip(screen, tooltip, mouse_pos)
+
+    def handle_recipe_book_key(self, state: RecipeBookState, key: int) -> None:
+        if key in {pygame.K_UP, pygame.K_w}:
+            state.scroll = max(0, state.scroll - 1)
+        elif key in {pygame.K_DOWN, pygame.K_s}:
+            state.scroll += 1
+        elif key == pygame.K_PAGEUP:
+            state.scroll = max(0, state.scroll - 8)
+        elif key == pygame.K_PAGEDOWN:
+            state.scroll += 8
+        elif key in {pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d}:
+            current = RECIPE_CATEGORIES.index(state.category) if state.category in RECIPE_CATEGORIES else 0
+            delta = -1 if key in {pygame.K_LEFT, pygame.K_a} else 1
+            state.category = RECIPE_CATEGORIES[(current + delta) % len(RECIPE_CATEGORIES)]
+            state.scroll = 0
+            state.selected_recipe_id = ""
+
+    def handle_recipe_book_click(self, state: RecipeBookState, mouse_pos: tuple[int, int]) -> None:
+        for category, rect in self._recipe_category_rects.items():
+            if rect.collidepoint(mouse_pos):
+                state.category = category
+                state.scroll = 0
+                state.selected_recipe_id = ""
+                return
+        for recipe_id, rect in self._recipe_row_rects.items():
+            if rect.collidepoint(mouse_pos):
+                state.selected_recipe_id = recipe_id
+                return
 
     def _world(self, screen: pygame.Surface, sim: object, camera: Camera, rect: pygame.Rect, selected: int, progress: float, mouse_pos: tuple[int, int]) -> list[str] | None:
         tooltip: list[str] | None = None
@@ -130,6 +201,7 @@ class Renderer:
         if sim.llm.last_error:
             y = self._wrap(screen, f"LLM error: {sim.llm.last_error[:120]}", x, y, 360, self.small, (230, 151, 126))
         y = self._wrap(screen, f"Recorder: {recorder_status}", x, y, 360, self.small, (142, 162, 174))
+        y = self._wrap(screen, "B: recipe book", x, y, 360, self.small, (142, 162, 174))
         agent = sim.agents[selected % len(sim.agents)]
         y += 8
         y = self._text(screen, f"{agent.name} | {agent.persona.archetype}", x, y, self.title, agent.color, 26)
@@ -160,6 +232,271 @@ class Renderer:
             if y > screen.get_height() - 18:
                 break
         return tooltip
+
+    def _recipe_book(self, screen: pygame.Surface, sim: object, selected: int, state: RecipeBookState, mouse_pos: tuple[int, int]) -> list[str] | None:
+        tooltip: list[str] | None = None
+        self._recipe_category_rects.clear()
+        self._recipe_row_rects.clear()
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 120))
+        screen.blit(overlay, (0, 0))
+
+        rect = pygame.Rect(70, 48, screen.get_width() - 140, screen.get_height() - 96)
+        pygame.draw.rect(screen, (20, 23, 27), rect, border_radius=8)
+        pygame.draw.rect(screen, (106, 118, 130), rect, 1, border_radius=8)
+        pygame.draw.rect(screen, (33, 38, 44), (rect.x, rect.y, rect.w, 54), border_top_left_radius=8, border_top_right_radius=8)
+        title_img = self.title.render("Recipe Book", True, (247, 243, 224))
+        screen.blit(title_img, (rect.x + 22, rect.y + 15))
+        help_img = self.small.render("B/Esc close  |  wheel or Up/Down scroll  |  click category/recipe", True, (169, 184, 196))
+        screen.blit(help_img, (rect.right - help_img.get_width() - 22, rect.y + 21))
+
+        agent = sim.agents[selected % len(sim.agents)]
+        recipes = self._recipes_for_category(state.category)
+        if not recipes:
+            recipes = list(RECIPES)
+        max_scroll = max(0, len(recipes) - 12)
+        state.scroll = max(0, min(state.scroll, max_scroll))
+        if not state.selected_recipe_id or state.selected_recipe_id not in {recipe.recipe_id for recipe in recipes}:
+            state.selected_recipe_id = recipes[min(state.scroll, len(recipes) - 1)].recipe_id if recipes else ""
+        selected_recipe = next((recipe for recipe in recipes if recipe.recipe_id == state.selected_recipe_id), recipes[0] if recipes else None)
+
+        categories_rect = pygame.Rect(rect.x + 18, rect.y + 72, 164, rect.h - 94)
+        list_rect = pygame.Rect(categories_rect.right + 16, categories_rect.y, 372, categories_rect.h)
+        detail_rect = pygame.Rect(list_rect.right + 18, categories_rect.y, rect.right - list_rect.right - 36, categories_rect.h)
+        self._recipe_categories(screen, categories_rect, state)
+        tooltip = self._recipe_list(screen, list_rect, recipes, state, agent, mouse_pos) or tooltip
+        if selected_recipe:
+            tooltip = self._recipe_details(screen, detail_rect, selected_recipe, agent, sim, mouse_pos) or tooltip
+        return tooltip
+
+    def _recipe_categories(self, screen: pygame.Surface, rect: pygame.Rect, state: RecipeBookState) -> None:
+        y = rect.y
+        y = self._text(screen, "Categories", rect.x, y, self.subtitle, (236, 239, 242), 24)
+        for category in RECIPE_CATEGORIES:
+            count = len(self._recipes_for_category(category))
+            row = pygame.Rect(rect.x, y, rect.w, 28)
+            self._recipe_category_rects[category] = row
+            active = category == state.category
+            pygame.draw.rect(screen, (58, 70, 80) if active else (28, 33, 39), row, border_radius=5)
+            pygame.draw.rect(screen, (126, 143, 158) if active else (55, 64, 73), row, 1, border_radius=5)
+            label = self.font.render(category, True, (250, 247, 228) if active else (202, 212, 220))
+            screen.blit(label, (row.x + 10, row.y + 5))
+            badge = self.small.render(str(count), True, (176, 190, 202))
+            screen.blit(badge, badge.get_rect(midright=(row.right - 9, row.centery)))
+            y += 32
+
+    def _recipe_list(
+        self,
+        screen: pygame.Surface,
+        rect: pygame.Rect,
+        recipes: list[RecipeDef],
+        state: RecipeBookState,
+        agent: object,
+        mouse_pos: tuple[int, int],
+    ) -> list[str] | None:
+        tooltip: list[str] | None = None
+        y = rect.y
+        y = self._text(screen, f"{state.category} Recipes", rect.x, y, self.subtitle, (236, 239, 242), 24)
+        visible = recipes[state.scroll : state.scroll + 12]
+        for recipe in visible:
+            row = pygame.Rect(rect.x, y, rect.w, 46)
+            self._recipe_row_rects[recipe.recipe_id] = row
+            known = recipe.recipe_id in getattr(agent, "known_recipes", set())
+            selected = recipe.recipe_id == state.selected_recipe_id
+            bg = (66, 73, 76) if selected else (35, 41, 47) if known else (27, 31, 36)
+            pygame.draw.rect(screen, bg, row, border_radius=6)
+            pygame.draw.rect(screen, (132, 151, 162) if selected else (60, 70, 79), row, 1, border_radius=6)
+            icon_x = row.x + 8
+            for out_index, (item_id, count) in enumerate(recipe.outputs[:3]):
+                icon_rect = pygame.Rect(icon_x + out_index * 30, row.y + 7, 26, 26)
+                self._draw_item_icon(screen, item_id, icon_rect, count if count > 1 else 0)
+                if icon_rect.collidepoint(mouse_pos):
+                    tooltip = self._item_tooltip(item_id, count, agent, prefix="Output")
+            text_x = row.x + 104
+            name_color = (248, 244, 224) if known else (192, 202, 210)
+            screen.blit(self.font.render(recipe.name, True, name_color), (text_x, row.y + 6))
+            station = item_name(recipe.station) if recipe.station else "Hand craft"
+            status = "known" if known else "hidden from agent"
+            meta = self.small.render(f"{station} | {status}", True, (156, 174, 188))
+            screen.blit(meta, (text_x, row.y + 26))
+            if self._agent_has_recipe_ingredients(agent, recipe):
+                pygame.draw.circle(screen, (107, 190, 122), (row.right - 18, row.centery), 5)
+            if row.collidepoint(mouse_pos):
+                pygame.draw.rect(screen, (255, 236, 120), row, 2, border_radius=6)
+            y += 50
+        if len(recipes) > 12:
+            footer = self.small.render(f"{state.scroll + 1}-{min(len(recipes), state.scroll + 12)} / {len(recipes)}", True, (154, 171, 185))
+            screen.blit(footer, (rect.x, rect.bottom - 18))
+        return tooltip
+
+    def _recipe_details(
+        self,
+        screen: pygame.Surface,
+        rect: pygame.Rect,
+        recipe: RecipeDef,
+        agent: object,
+        sim: object,
+        mouse_pos: tuple[int, int],
+    ) -> list[str] | None:
+        tooltip: list[str] | None = None
+        pygame.draw.rect(screen, (25, 30, 35), rect, border_radius=7)
+        pygame.draw.rect(screen, (72, 84, 96), rect, 1, border_radius=7)
+        y = rect.y + 18
+        x = rect.x + 20
+        known = recipe.recipe_id in getattr(agent, "known_recipes", set())
+        y = self._text(screen, recipe.name, x, y, self.title, (248, 244, 224), 30)
+        category = self._recipe_category(recipe)
+        station = item_name(recipe.station) if recipe.station else "Hand craft"
+        y = self._wrap(screen, f"{category} recipe | Station: {station}", x, y, rect.w - 40, self.font, (184, 200, 212))
+        status_color = (113, 201, 131) if known else (218, 172, 96)
+        status = f"{agent.name} knows this recipe" if known else f"Hidden from {agent.name}; agents must discover it themselves"
+        y = self._wrap(screen, status, x, y, rect.w - 40, self.font, status_color)
+
+        if recipe.hint:
+            y += 5
+            y = self._wrap(screen, recipe.hint, x, y, rect.w - 40, self.font, (214, 216, 205))
+        y += 12
+        y = self._text(screen, "Outputs", x, y, self.subtitle, (236, 239, 242), 24)
+        out_x = x
+        for item_id, count in recipe.outputs:
+            box = pygame.Rect(out_x, y, 54, 54)
+            self._draw_item_icon(screen, item_id, box.inflate(-8, -8), count if count > 1 else 0)
+            if box.collidepoint(mouse_pos):
+                tooltip = self._item_tooltip(item_id, count, agent, prefix="Output")
+            label = self.small.render(item_name(item_id)[:18], True, (198, 208, 216))
+            screen.blit(label, (out_x, y + 58))
+            out_x += 102
+        y += 86
+
+        y = self._text(screen, "Ingredients", x, y, self.subtitle, (236, 239, 242), 24)
+        for ingredient in recipe.ingredients:
+            row = pygame.Rect(x, y, rect.w - 40, 38)
+            owned = self._ingredient_owned(agent, ingredient)
+            ok = owned >= ingredient.count
+            pygame.draw.rect(screen, (32, 40, 36) if ok else (43, 34, 34), row, border_radius=5)
+            pygame.draw.rect(screen, (73, 104, 80) if ok else (105, 73, 73), row, 1, border_radius=5)
+            icon_rect = pygame.Rect(row.x + 6, row.y + 4, 30, 30)
+            icon_item = self._ingredient_icon_item(ingredient)
+            if icon_item:
+                self._draw_item_icon(screen, icon_item, icon_rect, 0)
+                if icon_rect.collidepoint(mouse_pos):
+                    tooltip = self._item_tooltip(icon_item, 1, agent, prefix="Ingredient option")
+            else:
+                pygame.draw.rect(screen, (67, 78, 88), icon_rect, border_radius=4)
+            label = self._ingredient_label(ingredient)
+            text = self.font.render(f"{label} x{ingredient.count}", True, (230, 234, 237))
+            screen.blit(text, (row.x + 44, row.y + 8))
+            amount = self.small.render(f"{owned}/{ingredient.count}", True, (154, 222, 166) if ok else (230, 151, 126))
+            screen.blit(amount, amount.get_rect(midright=(row.right - 10, row.centery)))
+            y += 43
+
+        y += 8
+        if recipe.station:
+            y = self._text(screen, "Station", x, y, self.subtitle, (236, 239, 242), 24)
+            station_item = ITEMS.get(recipe.station)
+            station_rect = pygame.Rect(x, y, 42, 42)
+            if station_item:
+                self._draw_item_icon(screen, recipe.station, station_rect, 0)
+            nearby = getattr(sim.world, "has_station_near", lambda *_args: False)(agent.x, agent.y, recipe.station)
+            carried = getattr(agent, "inventory", {}).get(recipe.station, 0) > 0
+            station_status = "nearby" if nearby else "carried" if carried else "missing nearby"
+            screen.blit(self.font.render(f"{station} | {station_status}", True, (208, 218, 226)), (x + 54, y + 11))
+            y += 54
+        can_attempt = known and self._agent_has_recipe_ingredients(agent, recipe)
+        if recipe.station:
+            can_attempt = can_attempt and (getattr(agent, "inventory", {}).get(recipe.station, 0) > 0 or getattr(sim.world, "has_station_near", lambda *_args: False)(agent.x, agent.y, recipe.station))
+        verdict = "Ready for selected agent" if can_attempt else "Not ready for selected agent"
+        pygame.draw.rect(screen, (36, 63, 43) if can_attempt else (64, 47, 37), (x, rect.bottom - 50, rect.w - 40, 32), border_radius=6)
+        screen.blit(self.font.render(verdict, True, (235, 241, 233)), (x + 12, rect.bottom - 43))
+        return tooltip
+
+    def _draw_item_icon(self, screen: pygame.Surface, item_id: str, rect: pygame.Rect, badge_count: int = 0) -> None:
+        item = ITEMS.get(item_id)
+        pygame.draw.rect(screen, (18, 21, 25), rect, border_radius=5)
+        pygame.draw.rect(screen, (70, 80, 91), rect, 1, border_radius=5)
+        if not item:
+            return
+        icon = self.assets.get(item.sprite)
+        icon_rect = icon.get_rect(center=rect.center)
+        screen.blit(icon, icon_rect)
+        if badge_count:
+            badge = self.small.render(str(badge_count), True, (245, 247, 250))
+            bg = badge.get_rect(bottomright=(rect.right - 2, rect.bottom - 2)).inflate(4, 2)
+            pygame.draw.rect(screen, (8, 10, 12), bg, border_radius=3)
+            screen.blit(badge, badge.get_rect(center=bg.center))
+
+    def _recipes_for_category(self, category: str) -> list[RecipeDef]:
+        recipes = sorted(RECIPES, key=lambda recipe: (self._recipe_category(recipe), recipe.name, recipe.recipe_id))
+        if category == "All":
+            return recipes
+        return [recipe for recipe in recipes if self._recipe_category(recipe) == category]
+
+    @staticmethod
+    def _recipe_category(recipe: RecipeDef) -> str:
+        output_tags: set[str] = set()
+        output_ids = {item_id for item_id, _count in recipe.outputs}
+        for item_id, _count in recipe.outputs:
+            item = ITEMS.get(item_id)
+            if item:
+                output_tags.update(item.tags)
+                if item.tool_tags:
+                    output_tags.update(item.tool_tags)
+        name = recipe.name.lower()
+        if output_tags & {"station", "machine", "vehicle"}:
+            return "Stations"
+        if output_tags & {"building", "wall", "floor", "shelter", "container", "roof"}:
+            return "Building"
+        if output_tags & {"potion", "alchemy"} or recipe.station == "potion_stand":
+            return "Alchemy"
+        if output_tags & {"armor"}:
+            return "Armor"
+        if output_tags & {"jewelry", "gold", "diamond"} and output_tags & {"crafted"}:
+            return "Jewelry"
+        if output_tags & {"weapon", "bow", "spear", "sword"} or any(word in name for word in ("spear", "sword", "bow", "sling", "bolas", "arrow", "harpoon")):
+            return "Weapons"
+        if output_tags & {"tool", "pickaxe", "axe", "shovel", "blade", "hammer", "saw", "chisel", "hoe", "bucket"}:
+            return "Tools"
+        if output_tags & {"food"} or any(word in name for word in ("cooked", "bread", "stew", "soup", "dried", "smoked")):
+            return "Food"
+        if output_tags & {"metal", "ore", "copper", "iron", "steel"} or any(word in name for word in ("ingot", "nail", "wire", "bracket", "rivet")):
+            return "Metal"
+        if output_tags & {"medicine"} or any(word in name for word in ("bandage", "splint", "ointment", "antiseptic")):
+            return "Medicine"
+        if output_tags & {"seed", "compost", "fertilizer", "farm"}:
+            return "Farming"
+        if output_ids & {"compass", "spyglass", "sextant", "terrain_map"}:
+            return "Navigation"
+        if not recipe.station:
+            return "Survival"
+        return "Other"
+
+    @staticmethod
+    def _ingredient_label(ingredient: Ingredient) -> str:
+        if ingredient.is_tag:
+            return f"Any {ingredient.tag}"
+        return item_name(ingredient.query)
+
+    @staticmethod
+    def _ingredient_icon_item(ingredient: Ingredient) -> str:
+        if not ingredient.is_tag:
+            return ingredient.query
+        matches = sorted(item_id for item_id, item in ITEMS.items() if ingredient.tag in item.tags)
+        return matches[0] if matches else ""
+
+    @staticmethod
+    def _ingredient_owned(agent: object, ingredient: Ingredient) -> int:
+        inventory = getattr(agent, "inventory", {})
+        if not ingredient.is_tag:
+            return int(inventory.get(ingredient.query, 0))
+        total = 0
+        for item_id, count in inventory.items():
+            item = ITEMS.get(item_id)
+            if item and ingredient.tag in item.tags:
+                total += int(count)
+        return total
+
+    def _agent_has_recipe_ingredients(self, agent: object, recipe: RecipeDef) -> bool:
+        return all(self._ingredient_owned(agent, ingredient) >= ingredient.count for ingredient in recipe.ingredients)
 
     def _minimap(self, screen: pygame.Surface, sim: object, rect: pygame.Rect, selected: int) -> None:
         pygame.draw.rect(screen, (8, 10, 12), rect)

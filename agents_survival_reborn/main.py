@@ -19,7 +19,7 @@ from .constants import (
     WORLD_WIDTH,
 )
 from .llm import Decision, LLMConfig
-from .renderer import Camera, Renderer
+from .renderer import Camera, RecipeBookState, Renderer
 from .simulation import Simulation
 from .start_items import parse_start_items
 
@@ -115,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     progress = 1.0
     pending_round: Future[dict[int, Decision]] | None = None
     replay_status = f"replay {sim.logger.replay_path.name}"
+    recipe_book = RecipeBookState()
 
     running = True
     try:
@@ -125,7 +126,12 @@ def main(argv: list[str] | None = None) -> int:
                     running = False
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        running = False
+                        if recipe_book.open:
+                            recipe_book.open = False
+                        else:
+                            running = False
+                    elif event.key == pygame.K_b:
+                        recipe_book.open = not recipe_book.open
                     elif event.key == pygame.K_SPACE:
                         paused = not paused
                     elif event.key == pygame.K_TAB:
@@ -135,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
                         camera.follow = not camera.follow
                     elif event.key == pygame.K_r:
                         replay_status = f"replay {sim.logger.replay_path.name}"
+                    elif recipe_book.open:
+                        renderer.handle_recipe_book_key(recipe_book, event.key)
+                elif recipe_book.open and event.type == pygame.MOUSEWHEEL:
+                    recipe_book.scroll = max(0, recipe_book.scroll - event.y)
+                elif recipe_book.open and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    renderer.handle_recipe_book_click(recipe_book, event.pos)
             _camera(camera, sim, selected, dt)
             if pending_round is not None and pending_round.done():
                 try:
@@ -163,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                 progress = 1.0
             elif paused:
                 progress = min(1.0, frames_since_round / max(1, args.round_frames))
-            renderer.draw(screen, sim, camera, selected, progress, replay_status, paused)
+            renderer.draw(screen, sim, camera, selected, progress, replay_status, paused, recipe_book=recipe_book)
             pygame.display.flip()
     finally:
         pygame.quit()

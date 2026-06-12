@@ -2490,3 +2490,40 @@ Validation:
 Current read:
 
 This is a meaningful quality upgrade, but not free. On this 8GB VRAM / 16GB RAM machine, the 14B model with 8192 context took about 160 seconds for one agent's decision in the smoke test. For watching the game live, the sane high-quality profile is 1-2 local Qwen agents with `--llm-workers 1`, high timeout, and long `--round-frames`. For more agents, use Gemini for some agents, lower local context to 4096/6144, or fall back to `qwen2.5:7b` for speed. A 32B-class model is likely too painful here unless disk/RAM/VRAM constraints change.
+
+## 2026-06-12 03:25 +03: Spectator Recipe Book
+
+Reason:
+
+The user stopped the C-drive cleanup and asked for a proper in-app recipe book with sprites and a polished, acceptable interface.
+
+Implementation:
+
+- Added `RecipeBookState` to the renderer.
+- Added a full-screen spectator recipe book overlay opened with `B`.
+- Added `Esc` behavior that closes the recipe book first and only quits when it is already closed.
+- Added mouse wheel scrolling, keyboard scrolling, category cycling, clickable categories, and clickable recipe rows.
+- Added the recipe book to both live gameplay and replay playback.
+- The recipe book shows:
+  - all recipes available to the spectator;
+  - category counts;
+  - output sprites and counts;
+  - ingredient sprites or representative sprites for tag ingredients;
+  - required station;
+  - recipe hint text;
+  - whether the selected agent knows the recipe;
+  - whether the selected agent currently has enough ingredients;
+  - whether the required station is nearby or carried.
+- Added HUD and README hints for `B`.
+- Kept agent knowledge rules intact:
+  - the recipe book is spectator-only;
+  - agents still have to discover hidden recipes through gameplay and cannot craft unknown recipe IDs.
+
+Validation:
+
+- `python -m compileall agents_survival_reborn tools` passed.
+- Render smoke test with dummy SDL opened the recipe book overlay and selected a recipe successfully.
+
+Current read:
+
+This should make the sandbox much easier to inspect. The viewer can now pause, select an agent, open the book, and see exactly which crafting path exists, which parts the selected agent has, and where the blocker is. The next useful polish pass would be adding a text search box if the recipe count becomes too awkward for category browsing.

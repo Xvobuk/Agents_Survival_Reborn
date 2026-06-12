@@ -136,8 +136,14 @@ trees, stone, sand/coast, animals, and clay/ore when the generated map permits i
 - Tab: select next agent and follow.
 - F: toggle camera follow.
 - Space: pause.
+- B: open or close the spectator recipe book.
 - R: show current replay file name again.
-- Escape: quit.
+- Escape: close the recipe book, then quit.
+
+The recipe book is a spectator reference. It shows every recipe with sprites,
+ingredients, outputs, required station, category, and whether the selected
+agent knows the recipe or currently has enough materials. Agents still discover
+hidden recipes through gameplay; the book does not grant them knowledge.
 
 ## LLM Design
 
@@ -240,5 +246,5 @@ python tools\play_replay.py logs\session_YYYYMMDD_HHMMSS --speed 3
 ```
 
 Replay controls: WASD/arrows move the spectator camera, Tab selects an agent,
-F follows the selected agent, Space pauses, `+`/`-` changes speed, and `[`/`]`
-steps frames.
+F follows the selected agent, Space pauses, `+`/`-` changes speed, `[`/`]`
+steps frames, and `B` opens the recipe book.
