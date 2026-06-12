@@ -2582,3 +2582,47 @@ Validation:
 Current read:
 
 The game currently has all sprite filenames present, but this gives us a cleaner path to replace placeholder or rough generated art without overloading ChatGPT with a 399-object mega-image.
+
+## 2026-06-12 04:13 +03: Imported ChatGPT Sprite Batches 01-06
+
+Reason:
+
+The user generated six new ChatGPT sprite atlases and placed them in `assets/generated` without canonical names. The art quality was visibly better than the earlier attempts, but the files needed to be identified, sliced, and validated before replacing in-game sprites.
+
+Implementation:
+
+- Matched the six uploaded atlases by visual content and creation order:
+  - `01_terrain_and_nature_features`;
+  - `02_ore_plants_and_natural_deposits`;
+  - `03_structures_agents_and_ui`;
+  - `04_basic_items_food_and_building`;
+  - `05_building_armor_and_raw_resources`;
+  - `06_plants_animal_parts_and_workshop_tools`.
+- Imported all six with `tools/import_sprite_batch_atlas.py --replace-existing --preview`.
+- Replaced 319 in-game sprite PNGs in `assets/sprites`.
+- Renamed the source atlases in `assets/generated` to their canonical batch names for local repeatability.
+- Generated contact sheets for visual inspection:
+  - uploaded atlas overview;
+  - imported sprite overview;
+  - game/render smoke preview.
+
+Validation:
+
+- Import wrote:
+  - 53 sprites for batch 01;
+  - 40 sprites for batch 02;
+  - 34 sprites for batch 03;
+  - 64 sprites for batch 04;
+  - 64 sprites for batch 05;
+  - 64 sprites for batch 06.
+- Sprite sanity check found:
+  - no missing files;
+  - no wrong-size sprites;
+  - no blank sprites;
+  - no opaque magenta leftovers in non-terrain sprites.
+- Dummy-display render smoke test loaded all assets with `missing 0`.
+- `python -m compileall agents_survival_reborn tools` passed.
+
+Current read:
+
+The first six atlas batches are now active in the game and the visual jump is substantial. Some recipe-book entries still show older placeholder-like art because batches 07 and 08 have not been generated/imported yet, especially late lighting/navigation/food and medicine/station items.
